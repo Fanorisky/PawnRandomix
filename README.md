@@ -21,9 +21,9 @@ new_bigint(g_BankBalance[MAX_PLAYERS]);
 /*
  Or if you want to use the common way of creating variables:
  
-     new g_BankBalance[MAX_PLAYERS][eBigIntParts];
+     new BigInt:g_BankBalance[MAX_PLAYERS][eBigIntParts];
 
-     new TestVar[eBigIntParts];
+     new BigInt:TestVar[eBigIntParts];
  or
      new_bigint(TestVar);
 
@@ -31,7 +31,7 @@ new_bigint(g_BankBalance[MAX_PLAYERS]);
      enum PLAYER_DATA
      {
         ...
-        BankMoney[eBigIntParts],
+        BigInt:BankMoney[eBigIntParts],
         ...
      };
 */
