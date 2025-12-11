@@ -1,0 +1,76 @@
+name: Build Release Artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Build Linux .so
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y cmake build-essential
+
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Find .so
+        run: |
+          find build -name "*.so" -print
+
+      - name: Upload .so artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-so
+          path: |
+            build/**/*.so
+
+  windows:
+    name: Build Windows .dll
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MinGW
+        run: |
+          sudo apt update
+          sudo apt install -y mingw-w64 cmake
+
+      - name: Configure cross compile
+        run: |
+          cmake -B build-win \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build-win --config Release --parallel
+
+      - name: Find .dll
+        run: |
+          find build-win -name "*.dll" -print
+
+      - name: Upload .dll artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-dll
+          path: |
+            build-win/**/*.dll
