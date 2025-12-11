@@ -11,24 +11,27 @@ env:
   BUILD_SERVER: "1"
 
 jobs:
+
   linux-docker:
-    name: Build Linux .so (Docker)
+    name: Build Linux .so (Docker 32-bit)
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (with submodules)
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Prepare build folder (owner uid 1000 required by container)
+      - name: Prepare build folder (uid 1000 required by container)
         run: |
-          mkdir -p build
-          # make sure uid:gid 1000:1000 owns it so container's 'user' can write
-          sudo chown 1000:1000 build
+          mkdir -p docker/build
+          sudo chown 1000:1000 docker/build
 
-      - name: Build Docker image (Ubuntu 18.04 builder)
+      - name: Build Docker image
         run: |
           docker build -t omp-easing-functions/build:ubuntu-18.04 docker/build_ubuntu-18.04/
 
-      - name: Run build inside Docker container
+      - name: Run build in Docker container
         env:
           CONFIG: ${{ env.CONFIG }}
           BUILD_SERVER: ${{ env.BUILD_SERVER }}
@@ -36,68 +39,63 @@ jobs:
           docker run --rm -t \
             -w /code \
             -v "${{ github.workspace }}:/code" \
-            -v "${{ github.workspace }}/build:/code/build" \
+            -v "${{ github.workspace }}/docker/build:/code/build" \
             -e CONFIG=${CONFIG} \
             -e BUILD_SERVER=${BUILD_SERVER} \
             omp-easing-functions/build:ubuntu-18.04
-
-      - name: List build output
-        run: |
-          echo "build/ listing:"
-          ls -la build || true
-          echo ".so files (if any):"
-          find build -type f -name "*.so" -print || true
 
       - name: Upload Linux .so artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-so
           path: |
-            build/**/*.so
-            build/*.so
+            docker/build/**/*.so
+            docker/build/*.so
+
 
   windows-cross:
-    name: Build Windows .dll (MinGW cross)
+    name: Build Windows .dll (MinGW 32-bit)
     runs-on: ubuntu-latest
     needs: linux-docker
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
-      - name: Install cross toolchain and build deps
+    steps:
+      - name: Checkout repository (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install MinGW and tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             mingw-w64 \
-            cmake \
             ninja-build \
+            cmake \
             build-essential
 
-      - name: Configure CMake for MinGW (x86_64)
+      # Force MinGW target = win32 (32 bit)
+      - name: Configure Windows 32-bit build
         run: |
-          mkdir -p build-win
-          cmake -S . -B build-win \
+          # Force mingw-w64 to default to 32-bit
+          sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc
+          sudo update-alternatives --set i686-w64-mingw32-g++ /usr/bin/i686-w64-mingw32-g++
+          
+          cmake -S . -B build-win32 \
             -G Ninja \
             -DCMAKE_SYSTEM_NAME=Windows \
-            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++ \
+            -DCMAKE_RC_COMPILER=i686-w64-mingw32-windres \
             -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build with CMake (MinGW)
+      - name: Build Windows 32-bit DLL
         run: |
-          cmake --build build-win --config Release --parallel
+          cmake --build build-win32 --config Release --parallel
 
-      - name: List build-win outputs
-        run: |
-          echo "build-win/ listing:"
-          ls -la build-win || true
-          echo ".dll files (if any):"
-          find build-win -type f -name "*.dll" -print || true
-
-      - name: Upload Windows .dll artifacts
+      - name: Upload Windows 32-bit .dll artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-dll
+          name: windows-dll-32bit
           path: |
-            build-win/**/*.dll
-            build-win/*.dll
+            build-win32/**/*.dll
+            build-win32/*.dll
