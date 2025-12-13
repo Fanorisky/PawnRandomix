@@ -51,7 +51,7 @@ namespace Easing
     // for colors, interpolate that RGBA
     static inline Colour LerpColour(Colour a, Colour b, float t)
     {
-        t = std::clamp(t, 0.0f, 1.0f);  // just in case, don't want out of bounds bullshit
+        t = std::clamp(t, 0.0f, 1.0f);  // just in case, don't want out of bounds
         
         return Colour(
             static_cast<uint8_t>(a.r + (b.r - a.r) * t),  // Red
@@ -863,7 +863,7 @@ SCRIPT_API(PlayerText_MoveLetterSize, int(IPlayer& player, IPlayerTextDraw& td, 
     );
 }
 
-SCRIPT_API(PlayerText_MoveTextSize, int(IPlayer& player, IPlayerTextDraw& td, float sizeX, int duration, int easeType, bool silent))
+SCRIPT_API(PlayerText_MoveTextSizeX, int(IPlayer& player, IPlayerTextDraw& td, float sizeX, int duration, int easeType, bool silent))
 {
     auto component = GetEasingComponent();
     if (!component || !component->GetAnimationSystem()) return -1;
@@ -872,6 +872,33 @@ SCRIPT_API(PlayerText_MoveTextSize, int(IPlayer& player, IPlayerTextDraw& td, fl
     
     Vector2 startSize = td.getTextSize();
     Vector2 targetSize = {sizeX, startSize.y};
+    Easing::EasingFunc easeFunc = GetEasingFunction(easeType);
+    Colour transparent(0, 0, 0, 0);
+    
+    return component->GetAnimationSystem()->CreateAnimation(
+        player.getID(), td.getID(),
+        Vector2(0, 0), Vector2(0, 0),
+        Vector2(0, 0), Vector2(0, 0),
+        startSize, targetSize,
+        transparent, transparent,
+        transparent, transparent,
+        transparent, transparent,
+        duration, easeFunc,
+        false, false, true,
+        false, false, false,
+        ANIMATOR_TEXT_SIZE, silent
+    );
+}
+
+SCRIPT_API(PlayerText_MoveTextSizeY, int(IPlayer& player, IPlayerTextDraw& td, float sizeY, int duration, int easeType, bool silent))
+{
+    auto component = GetEasingComponent();
+    if (!component || !component->GetAnimationSystem()) return -1;
+    
+    if (duration < 0) duration = 0;
+    
+    Vector2 startSize = td.getTextSize();
+    Vector2 targetSize = {startSize.x, sizeY};
     Easing::EasingFunc easeFunc = GetEasingFunction(easeType);
     Colour transparent(0, 0, 0, 0);
     
