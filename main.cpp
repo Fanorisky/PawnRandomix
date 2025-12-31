@@ -1,6 +1,5 @@
-// PawnRandomix - Random Number Generator for Open.MP
-// PRNG (PCG) dan CPRNG (ChaCha)
-// Fixed: Modulo Bias & Float Consistency
+// PawnRandomix - FIXED VERSION (No Singleton) dengan semua fungsi advanced
+// Mengikuti pola BigInt yang work
 
 #include <sdk.hpp>
 #include <Server/Components/Pawn/pawn.hpp>
@@ -12,9 +11,12 @@
 #include <array>
 #include <algorithm>
 #include <limits>
+#include <mutex>
+#include <random>
+#include <cmath>
 
 // ==============================
-// PCG Random Number Generator (PRNG)
+// PCG32 Implementation
 // ==============================
 class PCG32 {
 private:
@@ -57,12 +59,10 @@ public:
         return (xorshifted >> rot) | (xorshifted << ((~rot + 1) & 31u));
     }
     
-    // Fixed: Consistent float generation menggunakan 2^32
     float next_float() {
         return static_cast<float>(next_uint32()) / 4294967296.0f;
     }
     
-    // Fixed: Unbiased bounded random number generation
     uint32_t next_bounded(uint32_t bound) {
         if (bound == 0) return 0;
         
@@ -83,7 +83,7 @@ public:
 };
 
 // ==============================
-// ChaCha20 Random Number Generator (CPRNG)
+// ChaChaRNG Implementation
 // ==============================
 class ChaChaRNG {
 private:
@@ -186,12 +186,10 @@ public:
         return block[position++];
     }
     
-    // Fixed: Consistent float generation menggunakan 2^32
     float next_float() {
         return static_cast<float>(next_uint32()) / 4294967296.0f;
     }
     
-    // Fixed: Unbiased bounded random number generation
     uint32_t next_bounded(uint32_t bound) {
         if (bound == 0) return 0;
         
@@ -212,25 +210,58 @@ public:
 };
 
 // ==============================
+// Global Generators (No Singleton Pattern)
+// ==============================
+namespace RandomixGenerators {
+    std::mutex prng_mutex;
+    std::mutex csprng_mutex;
+    
+    PCG32& GetPRNG() {
+        static PCG32 instance(0);
+        return instance;
+    }
+    
+    ChaChaRNG& GetCSPRNG() {
+        static ChaChaRNG instance(0);
+        return instance;
+    }
+    
+    void SeedPRNG(uint64_t seed) {
+        std::lock_guard<std::mutex> lock(prng_mutex);
+        GetPRNG().seed(seed);
+    }
+    
+    void SeedCSPRNG(uint64_t seed) {
+        std::lock_guard<std::mutex> lock(csprng_mutex);
+        GetCSPRNG().seed(seed);
+    }
+}
+
+// ==============================
+// Helper Functions untuk Array Access
+// ==============================
+static inline cell* GetArrayPtr(AMX* amx, cell param)
+{
+    cell* addr = nullptr;
+    amx_GetAddr(amx, param, &addr);
+    return addr;
+}
+
+// ==============================
 // Main Randomix Component
 // ==============================
 class RandomixComponent final : public IComponent, public PawnEventHandler {
 private:
-    ICore* core = nullptr;
-    IPawnComponent* pawn = nullptr;
-    
-    // Random generators
-    PCG32 prng_generator;
-    ChaChaRNG cprng_generator;
-    
-    // Global instance
-    static RandomixComponent* g_RandomixComponent;
+    ICore* core_ = nullptr;
+    IPawnComponent* pawn_ = nullptr;
     
 public:
-    PROVIDE_UID(0x4D52616E646F6D69); // "MRandomi" in hex
+    PROVIDE_UID(0x4D52616E646F6D69);
     
     ~RandomixComponent() {
-        g_RandomixComponent = nullptr;
+        if (pawn_) {
+            pawn_->getEventDispatcher().removeEventHandler(this);
+        }
     }
     
     StringView componentName() const override {
@@ -242,33 +273,34 @@ public:
     }
     
     void onLoad(ICore* c) override {
-        core = c;
+        core_ = c;
         
         // Seed dengan waktu sistem
         uint64_t seed = static_cast<uint64_t>(
             std::chrono::system_clock::now().time_since_epoch().count()
         );
         
-        prng_generator = PCG32(seed);
-        cprng_generator = ChaChaRNG(seed);
+        RandomixGenerators::SeedPRNG(seed);
+        RandomixGenerators::SeedCSPRNG(seed);
         
-        g_RandomixComponent = this;
+        core_->printLn(" ");
+        core_->printLn("  PawnRandomix Component Loaded! [v1.1.0 - Fixed]");
+        core_->printLn("  PRNG: PCG32 (Fast, unbiased statistical)");
+        core_->printLn("  CSPRNG: ChaCha20 (Cryptographically secure)");
+        core_->printLn("  Fixed: Modulo Bias + Float Consistency");
+        core_->printLn("  Advanced functions: Shuffle, Gaussian, Dice, Weighted, etc.");
+        core_->printLn(" ");
         
-        core->printLn(" ");
-        core->printLn("  PawnRandomix Component Loaded! [v1.1.0 - Fixed]");
-        core->printLn("  PRNG: PCG32 (Fast, unbiased statistical)");
-        core->printLn("  CPRNG: ChaCha20 (Cryptographically secure)");
-        core->printLn("  Fixed: Modulo Bias + Float Consistency");
-        core->printLn(" ");
+        setAmxLookups(core_);
     }
     
     void onInit(IComponentList* components) override {
-        pawn = components->queryComponent<IPawnComponent>();
+        pawn_ = components->queryComponent<IPawnComponent>();
         
-        if (pawn) {
-            setAmxFunctions(pawn->getAmxFunctions());
+        if (pawn_) {
+            setAmxFunctions(pawn_->getAmxFunctions());
             setAmxLookups(components);
-            pawn->getEventDispatcher().addEventHandler(this);
+            pawn_->getEventDispatcher().addEventHandler(this);
         }
     }
     
@@ -278,134 +310,21 @@ public:
     
     void onAmxUnload(IPawnScript& script) override {}
     
-    // PRNG functions (PCG) - Fixed: Menggunakan next_bounded
-    uint32_t PRandom(uint32_t max) {
-        if (max == 0) return 0;
-        return prng_generator.next_bounded(max + 1);
-    }
+    void onReady() override {}
     
-    uint32_t PRandRange(uint32_t min, uint32_t max) {
-        if (min >= max) return min;
-        uint32_t range = max - min;
-        return min + prng_generator.next_bounded(range + 1);
-    }
-    
-    float PRandFloatRange(float min, float max) {
-        if (min >= max) return min;
-        return min + prng_generator.next_float() * (max - min);
-    }
-    
-    // CPRNG functions (ChaCha) - Fixed: Menggunakan next_bounded
-    uint32_t CPRandom(uint32_t max) {
-        if (max == 0) return 0;
-        return cprng_generator.next_bounded(max + 1);
-    }
-    
-    uint32_t CPRandRange(uint32_t min, uint32_t max) {
-        if (min >= max) return min;
-        uint32_t range = max - min;
-        return min + cprng_generator.next_bounded(range + 1);
-    }
-    
-    float CPRandFloatRange(float min, float max) {
-        if (min >= max) return min;
-        return min + cprng_generator.next_float() * (max - min);
-    }
-    
-    // Seed functions
-    void SeedPRNG(uint64_t seed) {
-        prng_generator.seed(seed);
-    }
-    
-    void SeedCPRNG(uint64_t seed) {
-        cprng_generator.seed(seed);
-    }
-    
-    // Advanced random functions
-    bool PRandBool(float probability = 0.5f) {
-        return prng_generator.next_float() < probability;
-    }
-    
-    bool CPRandBool(float probability = 0.5f) {
-        return cprng_generator.next_float() < probability;
-    }
-    
-    uint32_t PRandWeighted(const uint32_t* weights, size_t count) {
-        if (count == 0) return 0;
-        
-        uint32_t total = 0;
-        for (size_t i = 0; i < count; i++) {
-            total += weights[i];
-        }
-        
-        if (total == 0) return 0;
-        
-        uint32_t rand = prng_generator.next_bounded(total);
-        uint32_t sum = 0;
-        
-        for (size_t i = 0; i < count; i++) {
-            sum += weights[i];
-            if (rand < sum) return i;
-        }
-        
-        return count - 1;
-    }
-    
-    void PRandShuffle(uint32_t* array, size_t count) {
-        for (size_t i = count - 1; i > 0; i--) {
-            size_t j = prng_generator.next_bounded(i + 1);
-            std::swap(array[i], array[j]);
+    void onFree(IComponent* component) override {
+        if (component == pawn_) {
+            if (pawn_) {
+                pawn_->getEventDispatcher().removeEventHandler(this);
+            }
+            pawn_ = nullptr;
+            setAmxFunctions();
+            setAmxLookups();
         }
     }
     
-    uint32_t PRandGaussian(float mean, float stddev) {
-        // Box-Muller transform
-        float u1 = prng_generator.next_float();
-        float u2 = prng_generator.next_float();
-        
-        float z0 = sqrtf(-2.0f * logf(u1)) * cosf(6.28318530718f * u2);
-        float result = mean + z0 * stddev;
-        
-        return static_cast<uint32_t>(result < 0 ? 0 : result);
-    }
-    
-    void PRandPosition2D(float centerX, float centerY, float radius, float& outX, float& outY) {
-        float angle = prng_generator.next_float() * 6.28318530718f;
-        float r = sqrtf(prng_generator.next_float()) * radius;
-        
-        outX = centerX + r * cosf(angle);
-        outY = centerY + r * sinf(angle);
-    }
-    
-    void PRandPosition3D(float centerX, float centerY, float centerZ, float radius, 
-                         float& outX, float& outY, float& outZ) {
-        float theta = prng_generator.next_float() * 6.28318530718f;
-        float phi = acosf(2.0f * prng_generator.next_float() - 1.0f);
-        float r = powf(prng_generator.next_float(), 1.0f/3.0f) * radius;
-        
-        float sinPhi = sinf(phi);
-        outX = centerX + r * sinPhi * cosf(theta);
-        outY = centerY + r * sinPhi * sinf(theta);
-        outZ = centerZ + r * cosf(phi);
-    }
-    
-    uint32_t PRandDice(uint32_t sides, uint32_t count = 1) {
-        if (sides == 0 || count == 0) return 0;
-        
-        uint32_t total = 0;
-        for (uint32_t i = 0; i < count; i++) {
-            total += prng_generator.next_bounded(sides) + 1;
-        }
-        return total;
-    }
-    
-    uint32_t CPRandToken(uint32_t length) {
-        // Generate cryptographic token (for session IDs, etc)
-        uint32_t token = 0;
-        for (uint32_t i = 0; i < length && i < 8; i++) {
-            token = (token << 4) | (cprng_generator.next_bounded(16));
-        }
-        return token;
+    void free() override {
+        delete this;
     }
     
     void reset() override {
@@ -414,239 +333,289 @@ public:
             std::chrono::system_clock::now().time_since_epoch().count()
         );
         
-        prng_generator.seed(seed);
-        cprng_generator.seed(seed);
-    }
-    
-    void free() override {
-        delete this;
-    }
-    
-    void onReady() override {}
-    
-    void onFree(IComponent* component) override {
-        if (component == pawn) {
-            pawn = nullptr;
-            setAmxFunctions();
-            setAmxLookups();
-        }
-    }
-    
-    // Static getter for the global instance
-    static RandomixComponent* GetInstance() {
-        return g_RandomixComponent;
+        RandomixGenerators::SeedPRNG(seed);
+        RandomixGenerators::SeedCSPRNG(seed);
     }
 };
 
-// Initialize static member
-RandomixComponent* RandomixComponent::g_RandomixComponent = nullptr;
-
-// ==============================
-// Component Entry Point
-// ==============================
 COMPONENT_ENTRY_POINT() {
     return new RandomixComponent();
 }
 
 // ==============================
-// Helper Functions
-// ==============================
-static inline RandomixComponent* GetRandomixComponent() {
-    return RandomixComponent::GetInstance();
-}
-
-// ==============================
-// Pawn Native Functions
+// Basic Pawn Native Functions
 // ==============================
 
-// PRNG functions (PCG) - Fast, statistical random
+// PRNG functions (PCG)
 SCRIPT_API(PRandom, int(int max)) {
-    auto component = GetRandomixComponent();
-    if (!component || max < 0) return 0;
-    return static_cast<int>(component->PRandom(static_cast<uint32_t>(max)));
+    if (max < 0) return 0;
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    return static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(static_cast<uint32_t>(max) + 1));
 }
 
 SCRIPT_API(PRandRange, int(int min, int max)) {
-    auto component = GetRandomixComponent();
-    if (!component) return min;
-    
     if (min > max) std::swap(min, max);
-    return static_cast<int>(component->PRandRange(
-        static_cast<uint32_t>(min),
-        static_cast<uint32_t>(max)
-    ));
+    if (min == max) return min;
+    
+    uint32_t range = static_cast<uint32_t>(max - min);
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    return min + static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(range + 1));
 }
 
 SCRIPT_API(PRandFloatRange, float(float min, float max)) {
-    auto component = GetRandomixComponent();
-    if (!component) return min;
-    
     if (min > max) std::swap(min, max);
-    return component->PRandFloatRange(min, max);
+    if (min == max) return min;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    return min + RandomixGenerators::GetPRNG().next_float() * (max - min);
 }
 
-// CPRNG functions (ChaCha) - Cryptographically secure
-SCRIPT_API(CPRandom, int(int max)) {
-    auto component = GetRandomixComponent();
-    if (!component || max < 0) return 0;
-    return static_cast<int>(component->CPRandom(static_cast<uint32_t>(max)));
+// CSPRNG functions (ChaCha)
+SCRIPT_API(CSPRandom, int(int max)) {
+    if (max < 0) return 0;
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    return static_cast<int>(RandomixGenerators::GetCSPRNG().next_bounded(static_cast<uint32_t>(max) + 1));
 }
 
-SCRIPT_API(CPRandRange, int(int min, int max)) {
-    auto component = GetRandomixComponent();
-    if (!component) return min;
-    
+SCRIPT_API(CSPRandRange, int(int min, int max)) {
     if (min > max) std::swap(min, max);
-    return static_cast<int>(component->CPRandRange(
-        static_cast<uint32_t>(min),
-        static_cast<uint32_t>(max)
-    ));
+    if (min == max) return min;
+    
+    uint32_t range = static_cast<uint32_t>(max - min);
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    return min + static_cast<int>(RandomixGenerators::GetCSPRNG().next_bounded(range + 1));
 }
 
-SCRIPT_API(CPRandFloatRange, float(float min, float max)) {
-    auto component = GetRandomixComponent();
-    if (!component) return min;
-    
+SCRIPT_API(CSPRandFloatRange, float(float min, float max)) {
     if (min > max) std::swap(min, max);
-    return component->CPRandFloatRange(min, max);
+    if (min == max) return min;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    return min + RandomixGenerators::GetCSPRNG().next_float() * (max - min);
 }
 
 // Seed functions
 SCRIPT_API(SeedPRNG, int(int seed)) {
-    auto component = GetRandomixComponent();
-    if (!component) return 0;
-    
-    component->SeedPRNG(static_cast<uint64_t>(seed));
+    RandomixGenerators::SeedPRNG(static_cast<uint64_t>(seed));
     return 1;
 }
 
-SCRIPT_API(SeedCPRNG, int(int seed)) {
-    auto component = GetRandomixComponent();
-    if (!component) return 0;
-    
-    component->SeedCPRNG(static_cast<uint64_t>(seed));
+SCRIPT_API(SeedCSPRNG, int(int seed)) {
+    RandomixGenerators::SeedCSPRNG(static_cast<uint64_t>(seed));
     return 1;
 }
 
 // ==============================
-// Helper Functions for Array Access
-// ==============================
-static inline cell* GetArrayPtr(AMX* amx, cell param)
-{
-    cell* addr = nullptr;
-    amx_GetAddr(amx, param, &addr);
-    return addr;
-}
-
-// ==============================
-// Advanced Native Functions
+// ADVANCED NATIVE FUNCTIONS
 // ==============================
 
 // Random boolean dengan probability
 SCRIPT_API(PRandBool, bool(float probability)) {
-    auto component = GetRandomixComponent();
-    if (!component) return false;
-    
     if (probability <= 0.0f) return false;
     if (probability >= 1.0f) return true;
     
-    return component->PRandBool(probability);
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    return RandomixGenerators::GetPRNG().next_float() < probability;
 }
 
-SCRIPT_API(CPRandBool, bool(float probability)) {
-    auto component = GetRandomixComponent();
-    if (!component) return false;
-    
+SCRIPT_API(CSPRandBool, bool(float probability)) {
     if (probability <= 0.0f) return false;
     if (probability >= 1.0f) return true;
     
-    return component->CPRandBool(probability);
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    return RandomixGenerators::GetCSPRNG().next_float() < probability;
 }
 
 // Weighted random selection
 SCRIPT_API(PRandWeighted, int(cell weightsAddr, int count)) {
-    auto component = GetRandomixComponent();
-    if (!component || count <= 0) return 0;
+    if (count <= 0) return 0;
     
     cell* weights = GetArrayPtr(GetAMX(), weightsAddr);
     if (!weights) return 0;
     
-    uint32_t* uweights = new uint32_t[count];
+    // Hitung total weight
+    uint32_t total = 0;
     for (int i = 0; i < count; i++) {
-        uweights[i] = weights[i] > 0 ? static_cast<uint32_t>(weights[i]) : 0;
+        if (weights[i] > 0) {
+            total += static_cast<uint32_t>(weights[i]);
+        }
     }
     
-    uint32_t result = component->PRandWeighted(uweights, count);
-    delete[] uweights;
+    if (total == 0) return 0;
     
-    return static_cast<int>(result);
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    uint32_t rand = RandomixGenerators::GetPRNG().next_bounded(total);
+    uint32_t sum = 0;
+    
+    for (int i = 0; i < count; i++) {
+        if (weights[i] > 0) {
+            sum += static_cast<uint32_t>(weights[i]);
+            if (rand < sum) return i;
+        }
+    }
+    
+    return count - 1;
 }
 
-// Shuffle array in-place
+// Shuffle array in-place (Fisher-Yates algorithm)
 SCRIPT_API(PRandShuffle, bool(cell arrayAddr, int count)) {
-    auto component = GetRandomixComponent();
-    if (!component || count <= 0) return false;
+    if (count <= 1) return true;
     
     cell* array = GetArrayPtr(GetAMX(), arrayAddr);
     if (!array) return false;
     
-    uint32_t* uarray = new uint32_t[count];
-    for (int i = 0; i < count; i++) {
-        uarray[i] = static_cast<uint32_t>(array[i]);
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    // Fisher-Yates shuffle
+    for (int i = count - 1; i > 0; i--) {
+        int j = static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(i + 1));
+        std::swap(array[i], array[j]);
     }
     
-    component->PRandShuffle(uarray, count);
-    
-    for (int i = 0; i < count; i++) {
-        array[i] = static_cast<int>(uarray[i]);
-    }
-    
-    delete[] uarray;
     return true;
 }
 
-// Gaussian/Normal distribution
+// Gaussian/Normal distribution (Box-Muller transform)
 SCRIPT_API(PRandGaussian, int(float mean, float stddev)) {
-    auto component = GetRandomixComponent();
-    if (!component) return static_cast<int>(mean);
+    if (stddev <= 0.0f) return static_cast<int>(mean);
     
-    return static_cast<int>(component->PRandGaussian(mean, stddev));
-}
-
-// Random position in 2D circle
-SCRIPT_API(PRandPosition2D, bool(float centerX, float centerY, float radius, float& outX, float& outY)) {
-    auto component = GetRandomixComponent();
-    if (!component || radius <= 0.0f) return false;
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
     
-    component->PRandPosition2D(centerX, centerY, radius, outX, outY);
-    return true;
-}
-
-// Random position in 3D sphere
-SCRIPT_API(PRandPosition3D, bool(float centerX, float centerY, float centerZ, float radius, 
-                                  float& outX, float& outY, float& outZ)) {
-    auto component = GetRandomixComponent();
-    if (!component || radius <= 0.0f) return false;
+    // Box-Muller transform
+    float u1 = RandomixGenerators::GetPRNG().next_float();
+    float u2 = RandomixGenerators::GetPRNG().next_float();
     
-    component->PRandPosition3D(centerX, centerY, centerZ, radius, outX, outY, outZ);
-    return true;
+    // Hindari log(0)
+    if (u1 < 1e-10f) u1 = 1e-10f;
+    
+    float z0 = sqrtf(-2.0f * logf(u1)) * cosf(6.28318530718f * u2);
+    float result = mean + z0 * stddev;
+    
+    // Kembalikan integer positif
+    return static_cast<int>(result < 0.0f ? 0.0f : result);
 }
 
 // Roll dice (D&D style)
 SCRIPT_API(PRandDice, int(int sides, int count)) {
-    auto component = GetRandomixComponent();
-    if (!component || sides <= 0 || count <= 0) return 0;
+    if (sides <= 0 || count <= 0) return 0;
     
-    return static_cast<int>(component->PRandDice(
-        static_cast<uint32_t>(sides),
-        static_cast<uint32_t>(count)
-    ));
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    uint32_t total = 0;
+    uint32_t uSides = static_cast<uint32_t>(sides);
+    
+    for (int i = 0; i < count; i++) {
+        total += RandomixGenerators::GetPRNG().next_bounded(uSides) + 1;
+    }
+    
+    return static_cast<int>(total);
 }
 
-// Cryptographic token generation
-SCRIPT_API(CPRandToken, int(int length)) {
-    auto component = GetRandomixComponent();
-    if (!component || length <= 0) return 0;
+// Cryptographic token generation (hexadecimal)
+SCRIPT_API(CSPRandToken, int(int length)) {
+    if (length <= 0) return 0;
     
-    return static_cast<int>(component->CPRandToken(static_cast<uint32_t>(length)));
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    
+    // Generate token sebagai hexadecimal
+    uint32_t token = 0;
+    int actualLength = (length > 8) ? 8 : length; // Maksimal 8 hex digits (32-bit)
+    
+    for (int i = 0; i < actualLength; i++) {
+        token = (token << 4) | (RandomixGenerators::GetCSPRNG().next_bounded(16));
+    }
+    
+    return static_cast<int>(token);
+}
+
+// Random string dari karakter set
+SCRIPT_API(PRandString, int(cell destAddr, int maxLen, const std::string& charset)) {
+    if (maxLen <= 0 || charset.empty()) return 0;
+    
+    cell* dest = GetArrayPtr(GetAMX(), destAddr);
+    if (!dest) return 0;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    int length = static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(maxLen)) + 1;
+    int charsetSize = static_cast<int>(charset.size());
+    
+    for (int i = 0; i < length; i++) {
+        int idx = static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(charsetSize));
+        dest[i] = static_cast<cell>(charset[idx]);
+    }
+    
+    dest[length] = 0; // Null terminator
+    return length;
+}
+
+// Generate random UUID (version 4)
+SCRIPT_API(CSPRandUUID, int(OutputOnlyString& str)) {
+    // Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+    // dimana x adalah random hex digit, y adalah 8, 9, A, atau B
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    
+    std::string uuid;
+    const char hex[] = "0123456789abcdef";
+    
+    for (int i = 0; i < 32; i++) {
+        if (i == 8 || i == 12 || i == 16 || i == 20) {
+            uuid += '-';
+        }
+        
+        if (i == 12) {
+            uuid += '4'; // Version 4 UUID
+        } else if (i == 16) {
+            uint32_t rnd = RandomixGenerators::GetCSPRNG().next_bounded(4);
+            uuid += hex[8 + rnd]; // 8, 9, a, atau b
+        } else {
+            uint32_t rnd = RandomixGenerators::GetCSPRNG().next_bounded(16);
+            uuid += hex[rnd];
+        }
+    }
+    
+    str = uuid;
+    return std::get<StringView>(str).length();
+}
+
+// Random password generator
+SCRIPT_API(CSPRandPassword, int(OutputOnlyString& str, int length, int flags)) {
+    if (length <= 0) length = 12;
+    
+    const std::string lowercase = "abcdefghijklmnopqrstuvwxyz";
+    const std::string uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const std::string digits = "0123456789";
+    const std::string symbols = "!@#$%^&*()_+-=[]{}|;:,.<>?";
+    
+    std::string charset;
+    
+    // Build charset berdasarkan flags
+    if (flags & 1) charset += lowercase;      // 1 = lowercase
+    if (flags & 2) charset += uppercase;      // 2 = uppercase
+    if (flags & 4) charset += digits;         // 4 = digits
+    if (flags & 8) charset += symbols;        // 8 = symbols
+    
+    // Default: lowercase + uppercase + digits
+    if (charset.empty()) {
+        charset = lowercase + uppercase + digits;
+    }
+    
+    if (charset.empty()) {
+        str = "";
+        return 0;
+    }
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    
+    std::string password;
+    int charsetSize = static_cast<int>(charset.size());
+    
+    for (int i = 0; i < length; i++) {
+        int idx = static_cast<int>(RandomixGenerators::GetCSPRNG().next_bounded(charsetSize));
+        password += charset[idx];
+    }
+    
+    str = password;
+    return std::get<StringView>(str).length();
 }

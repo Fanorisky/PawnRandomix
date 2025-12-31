@@ -8,7 +8,7 @@
     Modern Random Generator for Open.MP
 
     - PRNG  : PCG32 (fast, unbiased)
-    - CPRNG : ChaCha20 (cryptographically secure)
+    - CSPRNG : ChaCha20 (cryptographically secure)
 
     Author : Component PawnRandomix
     Version: 1.1.0
@@ -35,16 +35,16 @@ native SeedPRNG(seed);
 // =======================================================
 
 // Random integer 0 .. max (secure)
-native CPRandom(max);
+native CSPRandom(max);
 
 // Random integer min .. max (secure)
-native CPRandRange(min, max);
+native CSPRandRange(min, max);
 
 // Random float min .. max (secure)
-native Float:CPRandFloatRange(Float:min, Float:max);
+native Float:CSPRandFloatRange(Float:min, Float:max);
 
-// Seed CPRNG
-native SeedCPRNG(seed);
+// Seed CSPRNG
+native SeedCSPRNG(seed);
 
 // =======================================================
 // BOOLEAN / PROBABILITY
@@ -54,7 +54,7 @@ native SeedCPRNG(seed);
 native bool:PRandBool(Float:probability = 0.5);
 
 // Secure version
-native bool:CPRandBool(Float:probability = 0.5);
+native bool:CSPRandBool(Float:probability = 0.5);
 
 // =======================================================
 // ADVANCED RANDOM
@@ -102,13 +102,13 @@ native bool:PRandPosition3D(
 native PRandDice(sides, count = 1);
 
 // Cryptographic token (hex-ish, up to 32-bit)
-native CPRandToken(length);
+native CSPRandToken(length);
 
 // =======================================================
 // CONVENIENCE MACROS
 // =======================================================
 
 #define PRand01()          PRandFloatRange(0.0, 1.0)
-#define CPRand01()         CPRandFloatRange(0.0, 1.0)
+#define CSPRand01()         CSPRandFloatRange(0.0, 1.0)
 #define PRandChance(p)    PRandBool(p)
-#define CPRandChance(p)   CPRandBool(p)
+#define CSPRandChance(p)   CSPRandBool(p)
