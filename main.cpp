@@ -1,4 +1,4 @@
-// PawnRandomix - Enhanced Random Number Generator for SA-MP Servers
+// Randomix - Enhanced Random Number Generator for open.mp Servers
 // Features: Fast PRNG for game mechanics, Cryptographic RNG for security
 
 #include <sdk.hpp>
@@ -382,7 +382,6 @@ public:
     }
     
     ~ChaChaRNG() {
-        // Clear all sensitive state
         std::fill(state.begin(), state.end(), 0);
         std::fill(block, block + 16, 0);
         counter = 0;
@@ -444,7 +443,7 @@ public:
     }
     
     StringView componentName() const override {
-        return "PawnRandomix";
+        return "Randomix";
     }
     
     SemanticVersion componentVersion() const override {
@@ -463,8 +462,8 @@ public:
         RandomixGenerators::SeedCSPRNG(seed);
         
         core_->printLn(" ");
-        core_->printLn("PawnRandomix Loaded - by Fanorisky");
-        core_->printLn("Version 1.2.0 (https://github.com/Fanorisky/pawn-randomix)");
+        core_->printLn("Randomix Loaded - by Fanorisky");
+        core_->printLn("Version 1.2.0 (https://github.com/Fanorisky/PawnRandomix)");
         core_->printLn(" ");
         
         setAmxLookups(core_);
@@ -713,7 +712,7 @@ SCRIPT_API(PRandDice, int(int sides, int count)) {
     return static_cast<int>(total);
 }
 
-// Generate hexadecimal token (for passwords, sessions, etc.)
+// Generate hexadecimal token
 SCRIPT_API(CSPRandToken, int(int length)) {
     if (length <= 0) return 0;
     
