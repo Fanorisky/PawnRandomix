@@ -1,424 +1,17 @@
-// Randomix - Enhanced Random Number Generator for open.mp Servers
-// Features: Fast PRNG for game mechanics, Cryptographic RNG for security
+/*
+ *  Randomix - Enhanced Random Number Generator for open.mp Servers
+ *  Copyright (c) 2025, Fanorisky
+ *  GitHub: github.com/Fanorisky/PawnRandomix
+ */
 
+#include "randomix.hpp"
 #include <sdk.hpp>
 #include <Server/Components/Pawn/pawn.hpp>
 #include <Server/Components/Pawn/Impl/pawn_natives.hpp>
 #include <Server/Components/Pawn/Impl/pawn_impl.hpp>
 
-#include <cstdint>
 #include <chrono>
-#include <array>
-#include <algorithm>
-#include <limits>
-#include <mutex>
-#include <random>
 #include <cmath>
-#include <cstring>
-
-// OS-specific headers for system entropy
-#ifdef _WIN32
-    #include <windows.h>
-#elif defined(__linux__)
-    #include <sys/syscall.h>
-    #include <unistd.h>
-    #include <fcntl.h>
-#elif defined(__unix__) || defined(__APPLE__)
-    #include <unistd.h>
-    #include <fcntl.h>
-#endif
-
-// PCG32 - Fast Random Generator
-class PCG32 {
-private:
-    uint64_t state;
-    uint64_t inc;
-    
-    static constexpr uint64_t MULTIPLIER = 6364136223846793005ULL;
-    static constexpr uint64_t INCREMENT = 1442695040888963407ULL;
-    
-public:
-    PCG32(uint64_t seed = 0) {
-        // If no seed provided, use system time
-        if (seed == 0) {
-            seed = static_cast<uint64_t>(
-                std::chrono::system_clock::now().time_since_epoch().count()
-            );
-        }
-        
-        // Initialize state
-        state = 0;
-        inc = (INCREMENT << 1u) | 1u;
-        next_uint32();
-        state += seed;
-        next_uint32();
-    }
-    
-    void seed(uint64_t seed) {
-        // Reset and set new seed
-        state = 0;
-        inc = (INCREMENT << 1u) | 1u;
-        next_uint32();
-        state += seed;
-        next_uint32();
-    }
-    
-    uint32_t next_uint32() {
-        // Generate 32-bit random number
-        uint64_t oldstate = state;
-        state = oldstate * MULTIPLIER + inc;
-        
-        uint32_t xorshifted = static_cast<uint32_t>(((oldstate >> 18u) ^ oldstate) >> 27u);
-        uint32_t rot = static_cast<uint32_t>(oldstate >> 59u);
-        
-        return (xorshifted >> rot) | (xorshifted << ((~rot + 1) & 31u));
-    }
-    
-    float next_float() {
-        // Float between 0.0 and 1.0
-        return static_cast<float>(next_uint32()) / 4294967296.0f;
-    }
-    
-    uint32_t next_bounded(uint32_t bound) {
-        // Random number within bounds (0 to bound-1)
-        if (bound == 0) return 0;
-        
-        // Lemire's method for unbiased results
-        uint64_t m = static_cast<uint64_t>(next_uint32()) * static_cast<uint64_t>(bound);
-        uint32_t leftover = static_cast<uint32_t>(m);
-        
-        if (leftover < bound) {
-            uint32_t threshold = (0u - bound) % bound;
-            while (leftover < threshold) {
-                m = static_cast<uint64_t>(next_uint32()) * static_cast<uint64_t>(bound);
-                leftover = static_cast<uint32_t>(m);
-            }
-        }
-        
-        return static_cast<uint32_t>(m >> 32);
-    }
-};
-
-// ChaChaRNG - Cryptographic Random
-class ChaChaRNG {
-private:
-    static constexpr int ROUNDS = 20;
-    std::array<uint32_t, 16> state;
-    uint32_t block[16];
-    int position;
-    uint64_t counter;
-    uint64_t bytes_generated;
-    static constexpr uint64_t RESEED_THRESHOLD = 32 * 1024 * 1024; // Reseed every 32MB
-    
-    // ChaCha20 constants
-    static constexpr uint32_t CONSTANTS[4] = {
-        0x61707865, 0x3320646e, 0x79622d32, 0x6b206574
-    };
-    
-    // Bit rotation left
-    static inline uint32_t rotl32(uint32_t x, int n) {
-        return (x << n) | (x >> (32 - n));
-    }
-    
-    // Quarter round operation (ChaCha20 core)
-    void quarter_round(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d) {
-        a += b; d ^= a; d = rotl32(d, 16);
-        c += d; b ^= c; b = rotl32(b, 12);
-        a += b; d ^= a; d = rotl32(d, 8);
-        c += d; b ^= c; b = rotl32(b, 7);
-    }
-    
-    // Get entropy from operating system
-    uint64_t get_os_entropy() {
-        uint64_t entropy = 0;
-        
-        #ifdef _WIN32
-            // Windows: use built-in security API
-            HMODULE advapi = LoadLibraryA("ADVAPI32.DLL");
-            if (advapi) {
-                typedef BOOLEAN (WINAPI *RtlGenRandomFunc)(PVOID, ULONG);
-                RtlGenRandomFunc func = (RtlGenRandomFunc)GetProcAddress(advapi, "SystemFunction036");
-                if (func) {
-                    func(&entropy, sizeof(entropy));
-                }
-                FreeLibrary(advapi);
-            }
-        #elif defined(__linux__)
-            // Linux: try getrandom syscall first
-            if (syscall(SYS_getrandom, &entropy, sizeof(entropy), 0) != sizeof(entropy)) {
-                // Fallback to /dev/urandom
-                int fd = open("/dev/urandom", O_RDONLY);
-                if (fd >= 0) {
-                    read(fd, &entropy, sizeof(entropy));
-                    close(fd);
-                }
-            }
-        #elif defined(__unix__) || defined(__APPLE__)
-            // Unix/Mac: use /dev/urandom directly
-            int fd = open("/dev/urandom", O_RDONLY);
-            if (fd >= 0) {
-                read(fd, &entropy, sizeof(entropy));
-                close(fd);
-            }
-        #endif
-        
-        return entropy;
-    }
-    
-    // Generate one block of data (64 bytes)
-    void generate_block() {
-        std::copy(state.begin(), state.end(), block);
-        
-        // 20 rounds of ChaCha20 (10 double rounds)
-        for (int i = 0; i < ROUNDS; i += 2) {
-            // Column rounds
-            quarter_round(block[0], block[4], block[8], block[12]);
-            quarter_round(block[1], block[5], block[9], block[13]);
-            quarter_round(block[2], block[6], block[10], block[14]);
-            quarter_round(block[3], block[7], block[11], block[15]);
-            
-            // Diagonal rounds
-            quarter_round(block[0], block[5], block[10], block[15]);
-            quarter_round(block[1], block[6], block[11], block[12]);
-            quarter_round(block[2], block[7], block[8], block[13]);
-            quarter_round(block[3], block[4], block[9], block[14]);
-        }
-        
-        // Add initial state
-        for (int i = 0; i < 16; ++i) {
-            block[i] += state[i];
-        }
-        
-        // Increment counter
-        counter++;
-        state[12] = static_cast<uint32_t>(counter);
-        state[13] = static_cast<uint32_t>(counter >> 32);
-        
-        bytes_generated += 64;
-        position = 0;
-    }
-    
-    // Check if reseed is needed
-    void check_reseed() {
-        if (bytes_generated >= RESEED_THRESHOLD) {
-            uint64_t os_entropy = get_os_entropy();
-            if (os_entropy != 0) {
-                // Mix system entropy with current state
-                uint64_t current_seed = (static_cast<uint64_t>(state[4]) << 32) | state[5];
-                seed(current_seed ^ os_entropy);
-                bytes_generated = 0;
-            }
-        }
-    }
-    
-    // Expand seed into longer key
-    void expand_seed(uint64_t seed, uint32_t* output, size_t count) {
-        std::array<uint32_t, 16> temp_state;
-        std::copy(CONSTANTS, CONSTANTS + 4, temp_state.begin());
-        
-        // Key from seed
-        temp_state[4] = static_cast<uint32_t>(seed);
-        temp_state[5] = static_cast<uint32_t>(seed >> 32);
-        temp_state[6] = static_cast<uint32_t>(seed ^ 0x5A5A5A5A);
-        temp_state[7] = static_cast<uint32_t>((seed >> 32) ^ 0xA5A5A5A5);
-        
-        // Nonce from high-precision time
-        auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
-        uint64_t nanos = static_cast<uint64_t>(now.count());
-        temp_state[8] = static_cast<uint32_t>(nanos);
-        temp_state[9] = static_cast<uint32_t>(nanos >> 32);
-        temp_state[10] = static_cast<uint32_t>(nanos ^ seed);
-        temp_state[11] = static_cast<uint32_t>((nanos >> 32) ^ (seed >> 32));
-        
-        // Initial counter
-        temp_state[12] = 0;
-        temp_state[13] = 0;
-        temp_state[14] = 0;
-        temp_state[15] = 0;
-        
-        uint32_t temp_block[16];
-        size_t generated = 0;
-        
-        while (generated < count) {
-            std::copy(temp_state.begin(), temp_state.end(), temp_block);
-            
-            // ChaCha20 processing for key derivation
-            for (int i = 0; i < ROUNDS; i += 2) {
-                quarter_round(temp_block[0], temp_block[4], temp_block[8], temp_block[12]);
-                quarter_round(temp_block[1], temp_block[5], temp_block[9], temp_block[13]);
-                quarter_round(temp_block[2], temp_block[6], temp_block[10], temp_block[14]);
-                quarter_round(temp_block[3], temp_block[7], temp_block[11], temp_block[15]);
-                
-                quarter_round(temp_block[0], temp_block[5], temp_block[10], temp_block[15]);
-                quarter_round(temp_block[1], temp_block[6], temp_block[11], temp_block[12]);
-                quarter_round(temp_block[2], temp_block[7], temp_block[8], temp_block[13]);
-                quarter_round(temp_block[3], temp_block[4], temp_block[9], temp_block[14]);
-            }
-            
-            for (int i = 0; i < 16; ++i) {
-                temp_block[i] += temp_state[i];
-            }
-            
-            size_t to_copy = std::min(count - generated, static_cast<size_t>(16));
-            std::copy(temp_block, temp_block + to_copy, output + generated);
-            generated += to_copy;
-            
-            // Increment counter
-            temp_state[12]++;
-            if (temp_state[12] == 0) temp_state[13]++;
-        }
-        
-        // Clear sensitive data from memory
-        std::fill(temp_state.begin(), temp_state.end(), 0);
-        std::fill(temp_block, temp_block + 16, 0);
-    }
-    
-public:
-    ChaChaRNG(uint64_t seed = 0) {
-        bytes_generated = 0;
-        
-        // If no seed provided, get from system
-        if (seed == 0) {
-            uint64_t os_entropy = get_os_entropy();
-            
-            if (os_entropy != 0) {
-                seed = os_entropy;
-            } else {
-                // Fallback: combine multiple time sources
-                auto sys_time = std::chrono::system_clock::now().time_since_epoch();
-                auto hi_time = std::chrono::high_resolution_clock::now().time_since_epoch();
-                
-                uint64_t t1 = static_cast<uint64_t>(sys_time.count());
-                uint64_t t2 = static_cast<uint64_t>(hi_time.count());
-                
-                seed = t1 ^ (t2 << 21) ^ (t2 >> 11);
-                seed ^= reinterpret_cast<uint64_t>(&seed);
-            }
-        }
-        
-        counter = 0;
-        std::copy(CONSTANTS, CONSTANTS + 4, state.begin());
-        
-        // Expand seed into key and nonce
-        uint32_t expanded[12];
-        expand_seed(seed, expanded, 12);
-        
-        // 256-bit key
-        std::copy(expanded, expanded + 8, state.begin() + 4);
-        
-        // 64-bit nonce
-        state[14] = expanded[8];
-        state[15] = expanded[9];
-        
-        // Initial counter
-        state[12] = 0;
-        state[13] = 0;
-        
-        // Clear expanded seed
-        std::fill(expanded, expanded + 12, 0);
-        
-        position = 16; // Force first block generation
-    }
-    
-    void seed(uint64_t seed) {
-        // Reset with new seed
-        counter = 0;
-        bytes_generated = 0;
-        std::copy(CONSTANTS, CONSTANTS + 4, state.begin());
-        
-        uint32_t expanded[12];
-        expand_seed(seed, expanded, 12);
-        
-        std::copy(expanded, expanded + 8, state.begin() + 4);
-        state[14] = expanded[8];
-        state[15] = expanded[9];
-        state[12] = 0;
-        state[13] = 0;
-        
-        std::fill(expanded, expanded + 12, 0);
-        position = 16;
-    }
-    
-    uint32_t next_uint32() {
-        check_reseed(); // Check for auto-reseed
-        if (position >= 16) {
-            generate_block();
-        }
-        return block[position++];
-    }
-    
-    float next_float() {
-        // 24-bit precision float
-        uint32_t val = next_uint32() >> 8;
-        return static_cast<float>(val) / 16777216.0f; // 2^24
-    }
-    
-    uint32_t next_bounded(uint32_t bound) {
-        if (bound == 0) return 0;
-        if (bound == 1) return 0;
-        
-        // Lemire's method with rejection sampling
-        uint64_t m = static_cast<uint64_t>(next_uint32()) * static_cast<uint64_t>(bound);
-        uint32_t leftover = static_cast<uint32_t>(m);
-        
-        if (leftover < bound) {
-            uint32_t threshold = (0u - bound) % bound;
-            while (leftover < threshold) {
-                m = static_cast<uint64_t>(next_uint32()) * static_cast<uint64_t>(bound);
-                leftover = static_cast<uint32_t>(m);
-            }
-        }
-        
-        return static_cast<uint32_t>(m >> 32);
-    }
-    
-    // Generate random bytes for cryptographic use
-    void next_bytes(uint8_t* buffer, size_t length) {
-        for (size_t i = 0; i < length; i += 4) {
-            uint32_t val = next_uint32();
-            size_t to_copy = std::min(static_cast<size_t>(4), length - i);
-            std::memcpy(buffer + i, &val, to_copy);
-        }
-    }
-    
-    ~ChaChaRNG() {
-        std::fill(state.begin(), state.end(), 0);
-        std::fill(block, block + 16, 0);
-        counter = 0;
-        bytes_generated = 0;
-        position = 0;
-    }
-};
-
-// Global Random Generators
-namespace RandomixGenerators {
-    std::mutex prng_mutex;     // For PRNG (PCG32)
-    std::mutex csprng_mutex;   // For CSPRNG (ChaChaRNG)
-    
-    // Singleton instance for PRNG
-    PCG32& GetPRNG() {
-        static PCG32 instance(0);
-        return instance;
-    }
-    
-    // Singleton instance for CSPRNG
-    ChaChaRNG& GetCSPRNG() {
-        static ChaChaRNG instance(0);
-        return instance;
-    }
-    
-    // Function to set PRNG seed
-    void SeedPRNG(uint64_t seed) {
-        std::lock_guard<std::mutex> lock(prng_mutex);
-        GetPRNG().seed(seed);
-    }
-    
-    // Function to set CSPRNG seed
-    void SeedCSPRNG(uint64_t seed) {
-        std::lock_guard<std::mutex> lock(csprng_mutex);
-        GetCSPRNG().seed(seed);
-    }
-}
 
 // Helper Functions for Pawn
 static inline cell* GetArrayPtr(AMX* amx, cell param) {
@@ -453,7 +46,6 @@ public:
     void onLoad(ICore* c) override {
         core_ = c;
         
-        // Seed with system time
         uint64_t seed = static_cast<uint64_t>(
             std::chrono::system_clock::now().time_since_epoch().count()
         );
@@ -461,10 +53,12 @@ public:
         RandomixGenerators::SeedPRNG(seed);
         RandomixGenerators::SeedCSPRNG(seed);
         
-        core_->printLn(" ");
-        core_->printLn("Randomix Loaded - by Fanorisky");
-        core_->printLn("Version 1.2.0 (https://github.com/Fanorisky/PawnRandomix)");
-        core_->printLn(" ");
+        core_->printLn("");
+        core_->printLn("  Randomix Component Loaded");
+        core_->printLn("  Version: v%s", RANDOMIX_VERSION);
+        core_->printLn("  Author: Fanorisky");
+        core_->printLn("  GitHub: github.com/Fanorisky/PawnRandomix");
+        core_->printLn("");
         
         setAmxLookups(core_);
     }
@@ -503,7 +97,6 @@ public:
     }
     
     void reset() override {
-        // Reset seed with new time
         uint64_t seed = static_cast<uint64_t>(
             std::chrono::system_clock::now().time_since_epoch().count()
         );
@@ -517,19 +110,6 @@ COMPONENT_ENTRY_POINT() {
     return new RandomixComponent();
 }
 
-// Basic PRNG (PCG32) - for game mechanics
-SCRIPT_API(PRandom, int(int max)) {
-    if (max < 0) return 0;
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    return static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(static_cast<uint32_t>(max)));
-}
-
-// Basic CSPRNG (ChaCha20) - for security operations
-SCRIPT_API(CSPRandom, int(int max)) {
-    if (max < 0) return 0;
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
-    return static_cast<int>(RandomixGenerators::GetCSPRNG().next_bounded(static_cast<uint32_t>(max)));
-}
 
 // Random within specific range (PRNG)
 SCRIPT_API(PRandRange, int(int min, int max)) {
@@ -616,7 +196,6 @@ SCRIPT_API(PRandWeighted, int(cell weightsAddr, int count)) {
     cell* weights = GetArrayPtr(GetAMX(), weightsAddr);
     if (!weights) return 0;
     
-    // Calculate total weight
     uint32_t total = 0;
     for (int i = 0; i < count; i++) {
         if (weights[i] > 0) {
@@ -630,7 +209,6 @@ SCRIPT_API(PRandWeighted, int(cell weightsAddr, int count)) {
     uint32_t rand = RandomixGenerators::GetPRNG().next_bounded(total);
     uint32_t sum = 0;
     
-    // Find index based on weight
     for (int i = 0; i < count; i++) {
         if (weights[i] > 0) {
             sum += static_cast<uint32_t>(weights[i]);
@@ -650,7 +228,6 @@ SCRIPT_API(PRandShuffle, bool(cell arrayAddr, int count)) {
     
     std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
     
-    // Fisher-Yates shuffle algorithm
     for (int i = count - 1; i > 0; i--) {
         int j = static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(i + 1));
         std::swap(array[i], array[j]);
@@ -682,17 +259,14 @@ SCRIPT_API(PRandGaussian, int(float mean, float stddev)) {
     
     std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
     
-    // Box-Muller transform
     float u1 = RandomixGenerators::GetPRNG().next_float();
     float u2 = RandomixGenerators::GetPRNG().next_float();
     
-    // Avoid log(0)
     if (u1 < 1e-10f) u1 = 1e-10f;
     
     float z0 = sqrtf(-2.0f * logf(u1)) * cosf(6.28318530718f * u2);
     float result = mean + z0 * stddev;
     
-    // Ensure non-negative result
     return static_cast<int>(result < 0.0f ? 0.0f : result);
 }
 
@@ -718,9 +292,8 @@ SCRIPT_API(CSPRandToken, int(int length)) {
     
     std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
     
-    // Generate token as hexadecimal
     uint32_t token = 0;
-    int actualLength = (length > 8) ? 8 : length; // Max 8 hex digits
+    int actualLength = (length > 8) ? 8 : length;
     
     for (int i = 0; i < actualLength; i++) {
         token = (token << 4) | (RandomixGenerators::GetCSPRNG().next_bounded(16));
@@ -757,11 +330,9 @@ SCRIPT_API(CSPRandUUID, bool(cell destAddr)) {
         RandomixGenerators::GetCSPRNG().next_bytes(bytes, 16);
     }
 
-    // UUID v4 format (RFC 4122)
-    bytes[6] = (bytes[6] & 0x0F) | 0x40; // Version 4
-    bytes[8] = (bytes[8] & 0x3F) | 0x80; // RFC 4122 variant
+    bytes[6] = (bytes[6] & 0x0F) | 0x40;
+    bytes[8] = (bytes[8] & 0x3F) | 0x80;
 
-    // Convert to hexadecimal string
     static const char* hex = "0123456789abcdef";
     int p = 0;
 
@@ -770,12 +341,381 @@ SCRIPT_API(CSPRandUUID, bool(cell destAddr)) {
         out[p++] = hex[b & 0xF];
     };
 
-    // Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     for (int i = 0; i < 16; i++) {
         write(bytes[i]);
         if (i == 3 || i == 5 || i == 7 || i == 9)
             out[p++] = '-';
     }
     out[p] = '\0';
+    return true;
+}
+
+// ============================================
+// 2D POINT FUNCTIONS - FIXED VERSION
+// ============================================
+
+/**
+ * Generate random point in circle (uniform distribution)
+ * Uses polar rejection method for true uniform distribution
+ */
+SCRIPT_API(PRandPointInCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
+    if (radius <= 0.0f) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!xAddr || !yAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    // Square root method for uniform distribution
+    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f; // 2π
+    float r = radius * sqrtf(RandomixGenerators::GetPRNG().next_float());
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + r * cosf(angle);
+    *reinterpret_cast<float*>(yAddr) = centerY + r * sinf(angle);
+    
+    return true;
+}
+
+/**
+ * CSPRNG version
+ */
+SCRIPT_API(CSPRandPointInCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
+    if (radius <= 0.0f) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!xAddr || !yAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    
+    float angle = RandomixGenerators::GetCSPRNG().next_float() * 6.28318530718f;
+    float r = radius * sqrtf(RandomixGenerators::GetCSPRNG().next_float());
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + r * cosf(angle);
+    *reinterpret_cast<float*>(yAddr) = centerY + r * sinf(angle);
+    
+    return true;
+}
+
+/**
+ * Generate random point on circle edge (circumference)
+ */
+SCRIPT_API(PRandPointOnCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
+    if (radius <= 0.0f) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!xAddr || !yAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f;
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + radius * cosf(angle);
+    *reinterpret_cast<float*>(yAddr) = centerY + radius * sinf(angle);
+    
+    return true;
+}
+
+/**
+ * Generate random point in rectangle
+ */
+SCRIPT_API(PRandPointInRect, bool(float minX, float minY, float maxX, float maxY, cell outX, cell outY)) {
+    if (minX > maxX) std::swap(minX, maxX);
+    if (minY > maxY) std::swap(minY, maxY);
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!xAddr || !yAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    *reinterpret_cast<float*>(xAddr) = minX + RandomixGenerators::GetPRNG().next_float() * (maxX - minX);
+    *reinterpret_cast<float*>(yAddr) = minY + RandomixGenerators::GetPRNG().next_float() * (maxY - minY);
+    
+    return true;
+}
+
+/**
+ * Generate random point in ring (donut shape)
+ */
+SCRIPT_API(PRandPointInRing, bool(float centerX, float centerY, float innerRadius, float outerRadius, cell outX, cell outY)) {
+    if (innerRadius < 0.0f || outerRadius <= 0.0f || innerRadius >= outerRadius) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!xAddr || !yAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f;
+    
+    // Uniform distribution in ring
+    float innerRadiusSq = innerRadius * innerRadius;
+    float outerRadiusSq = outerRadius * outerRadius;
+    float r = sqrtf(innerRadiusSq + RandomixGenerators::GetPRNG().next_float() * (outerRadiusSq - innerRadiusSq));
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + r * cosf(angle);
+    *reinterpret_cast<float*>(yAddr) = centerY + r * sinf(angle);
+    
+    return true;
+}
+
+/**
+ * Generate random point in ellipse
+ */
+SCRIPT_API(PRandPointInEllipse, bool(float centerX, float centerY, float radiusX, float radiusY, cell outX, cell outY)) {
+    if (radiusX <= 0.0f || radiusY <= 0.0f) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!xAddr || !yAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f;
+    float r = sqrtf(RandomixGenerators::GetPRNG().next_float());
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + radiusX * r * cosf(angle);
+    *reinterpret_cast<float*>(yAddr) = centerY + radiusY * r * sinf(angle);
+    
+    return true;
+}
+
+/**
+ * Generate random point in triangle
+ */
+SCRIPT_API(PRandPointInTriangle, bool(float x1, float y1, float x2, float y2, float x3, float y3, cell outX, cell outY)) {
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!xAddr || !yAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    // Barycentric coordinate method
+    float r1 = RandomixGenerators::GetPRNG().next_float();
+    float r2 = RandomixGenerators::GetPRNG().next_float();
+    
+    if (r1 + r2 > 1.0f) {
+        r1 = 1.0f - r1;
+        r2 = 1.0f - r2;
+    }
+    
+    float r3 = 1.0f - r1 - r2;
+    
+    *reinterpret_cast<float*>(xAddr) = r1 * x1 + r2 * x2 + r3 * x3;
+    *reinterpret_cast<float*>(yAddr) = r1 * y1 + r2 * y2 + r3 * y3;
+    
+    return true;
+}
+
+// ============================================
+// 3D POINT FUNCTIONS - FIXED VERSION
+// ============================================
+
+/**
+ * Generate random point in sphere (uniform distribution)
+ * Fixed: Correct method for uniform distribution in sphere
+ */
+SCRIPT_API(PRandPointInSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
+    if (radius <= 0.0f) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    cell* zAddr = GetArrayPtr(GetAMX(), outZ);
+    
+    if (!xAddr || !yAddr || !zAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    // Rejection method for uniform distribution in sphere
+    float x, y, z, sq;
+    do {
+        x = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
+        y = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
+        z = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
+        sq = x * x + y * y + z * z;
+    } while (sq > 1.0f || sq == 0.0f);
+    
+    // Scale to uniform distribution within sphere
+    float scale = radius * cbrtf(RandomixGenerators::GetPRNG().next_float()) / sqrtf(sq);
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + x * scale;
+    *reinterpret_cast<float*>(yAddr) = centerY + y * scale;
+    *reinterpret_cast<float*>(zAddr) = centerZ + z * scale;
+    
+    return true;
+}
+
+/**
+ * CSPRNG version
+ */
+SCRIPT_API(CSPRandPointInSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
+    if (radius <= 0.0f) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    cell* zAddr = GetArrayPtr(GetAMX(), outZ);
+    
+    if (!xAddr || !yAddr || !zAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    
+    float x, y, z, sq;
+    do {
+        x = RandomixGenerators::GetCSPRNG().next_float() * 2.0f - 1.0f;
+        y = RandomixGenerators::GetCSPRNG().next_float() * 2.0f - 1.0f;
+        z = RandomixGenerators::GetCSPRNG().next_float() * 2.0f - 1.0f;
+        sq = x * x + y * y + z * z;
+    } while (sq > 1.0f || sq == 0.0f);
+    
+    float scale = radius * cbrtf(RandomixGenerators::GetCSPRNG().next_float()) / sqrtf(sq);
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + x * scale;
+    *reinterpret_cast<float*>(yAddr) = centerY + y * scale;
+    *reinterpret_cast<float*>(zAddr) = centerZ + z * scale;
+    
+    return true;
+}
+
+/**
+ * Generate random point on sphere surface
+ * Fixed: Correct method for uniform distribution on sphere surface
+ */
+SCRIPT_API(PRandPointOnSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
+    if (radius <= 0.0f) return false;
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    cell* zAddr = GetArrayPtr(GetAMX(), outZ);
+    
+    if (!xAddr || !yAddr || !zAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    // Marsaglia's method for uniform distribution on sphere surface
+    float u, v, s;
+    do {
+        u = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
+        v = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
+        s = u * u + v * v;
+    } while (s >= 1.0f || s == 0.0f);
+    
+    float multiplier = 2.0f * sqrtf(1.0f - s);
+    
+    *reinterpret_cast<float*>(xAddr) = centerX + radius * u * multiplier;
+    *reinterpret_cast<float*>(yAddr) = centerY + radius * v * multiplier;
+    *reinterpret_cast<float*>(zAddr) = centerZ + radius * (1.0f - 2.0f * s);
+    
+    return true;
+}
+
+/**
+ * Generate random point in box (cuboid)
+ */
+SCRIPT_API(PRandPointInBox, bool(float minX, float minY, float minZ, float maxX, float maxY, float maxZ, cell outX, cell outY, cell outZ)) {
+    if (minX > maxX) std::swap(minX, maxX);
+    if (minY > maxY) std::swap(minY, maxY);
+    if (minZ > maxZ) std::swap(minZ, maxZ);
+    
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    cell* zAddr = GetArrayPtr(GetAMX(), outZ);
+    
+    if (!xAddr || !yAddr || !zAddr) return false;
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    *reinterpret_cast<float*>(xAddr) = minX + RandomixGenerators::GetPRNG().next_float() * (maxX - minX);
+    *reinterpret_cast<float*>(yAddr) = minY + RandomixGenerators::GetPRNG().next_float() * (maxY - minY);
+    *reinterpret_cast<float*>(zAddr) = minZ + RandomixGenerators::GetPRNG().next_float() * (maxZ - minZ);
+    
+    return true;
+}
+
+// ============================================
+// ADVANCED GEOMETRIC FUNCTIONS - FIXED VERSION
+// ============================================
+
+/**
+ * Generate random point in convex polygon (2D)
+ * Uses triangulation method
+ */
+SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell outX, cell outY)) {
+    if (vertexCount < 3) return false;
+    
+    cell* verticesPtr = GetArrayPtr(GetAMX(), verticesAddr);
+    cell* xAddr = GetArrayPtr(GetAMX(), outX);
+    cell* yAddr = GetArrayPtr(GetAMX(), outY);
+    
+    if (!verticesPtr || !xAddr || !yAddr) return false;
+    
+    // Cast to float pointer for easier access
+    float* vertices = reinterpret_cast<float*>(verticesPtr);
+    
+    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    
+    // Calculate total area using triangulation from first vertex
+    float totalArea = 0.0f;
+    std::vector<float> triangleAreas;
+    
+    for (int i = 1; i < vertexCount - 1; i++) {
+        float x1 = vertices[0];
+        float y1 = vertices[1];
+        float x2 = vertices[i * 2];
+        float y2 = vertices[i * 2 + 1];
+        float x3 = vertices[(i + 1) * 2];
+        float y3 = vertices[(i + 1) * 2 + 1];
+        
+        // Triangle area using cross product
+        float area = fabsf((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)) * 0.5f;
+        triangleAreas.push_back(area);
+        totalArea += area;
+    }
+    
+    if (totalArea <= 0.0f) return false;
+    
+    // Select random triangle based on area weights
+    float rand = RandomixGenerators::GetPRNG().next_float() * totalArea;
+    float sum = 0.0f;
+    int selectedTriangle = 0;
+    
+    for (size_t i = 0; i < triangleAreas.size(); i++) {
+        sum += triangleAreas[i];
+        if (rand < sum) {
+            selectedTriangle = static_cast<int>(i);
+            break;
+        }
+    }
+    
+    // Generate point in selected triangle
+    float x1 = vertices[0];
+    float y1 = vertices[1];
+    float x2 = vertices[(selectedTriangle + 1) * 2];
+    float y2 = vertices[(selectedTriangle + 1) * 2 + 1];
+    float x3 = vertices[(selectedTriangle + 2) * 2];
+    float y3 = vertices[(selectedTriangle + 2) * 2 + 1];
+    
+    float r1 = RandomixGenerators::GetPRNG().next_float();
+    float r2 = RandomixGenerators::GetPRNG().next_float();
+    
+    if (r1 + r2 > 1.0f) {
+        r1 = 1.0f - r1;
+        r2 = 1.0f - r2;
+    }
+    
+    float r3 = 1.0f - r1 - r2;
+    
+    *reinterpret_cast<float*>(xAddr) = r1 * x1 + r2 * x2 + r3 * x3;
+    *reinterpret_cast<float*>(yAddr) = r1 * y1 + r2 * y2 + r3 * y3;
+    
     return true;
 }
