@@ -1,5 +1,4 @@
-```markdown
-# Pawn Randomix v2.0
+# Pawn Randomix
 
 Cryptographic-grade random number generator for **SA-MP** and **open.mp** servers.  
 Powered by **ChaCha20** stream cipher - the same algorithm used in TLS 1.3 and WireGuard.
