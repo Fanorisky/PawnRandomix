@@ -1,10 +1,8 @@
 #include "randomix.hpp"
 #include <chrono>
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 
-// OS-specific headers for system entropy
 #ifdef _WIN32
     #include <windows.h>
 #elif defined(__linux__)
@@ -16,61 +14,7 @@
     #include <fcntl.h>
 #endif
 
-// PCG32 Implementation
-PCG32::PCG32(uint64_t seed) {
-    if (seed == 0) {
-        seed = static_cast<uint64_t>(
-            std::chrono::system_clock::now().time_since_epoch().count()
-        );
-    }
-    
-    state = 0;
-    inc = (INCREMENT << 1u) | 1u;
-    next_uint32();
-    state += seed;
-    next_uint32();
-}
-
-void PCG32::seed(uint64_t seed) {
-    state = 0;
-    inc = (INCREMENT << 1u) | 1u;
-    next_uint32();
-    state += seed;
-    next_uint32();
-}
-
-uint32_t PCG32::next_uint32() {
-    uint64_t oldstate = state;
-    state = oldstate * MULTIPLIER + inc;
-    
-    uint32_t xorshifted = static_cast<uint32_t>(((oldstate >> 18u) ^ oldstate) >> 27u);
-    uint32_t rot = static_cast<uint32_t>(oldstate >> 59u);
-    
-    return (xorshifted >> rot) | (xorshifted << ((~rot + 1) & 31u));
-}
-
-float PCG32::next_float() {
-    return static_cast<float>(next_uint32()) / 4294967296.0f;
-}
-
-uint32_t PCG32::next_bounded(uint32_t bound) {
-    if (bound == 0) return 0;
-    
-    uint64_t m = static_cast<uint64_t>(next_uint32()) * static_cast<uint64_t>(bound);
-    uint32_t leftover = static_cast<uint32_t>(m);
-    
-    if (leftover < bound) {
-        uint32_t threshold = (0u - bound) % bound;
-        while (leftover < threshold) {
-            m = static_cast<uint64_t>(next_uint32()) * static_cast<uint64_t>(bound);
-            leftover = static_cast<uint32_t>(m);
-        }
-    }
-    
-    return static_cast<uint32_t>(m >> 32);
-}
-
-// ChaChaRNG Implementation
+// ChaCha20 Implementation
 inline uint32_t ChaChaRNG::rotl32(uint32_t x, int n) {
     return (x << n) | (x >> (32 - n));
 }
@@ -264,7 +208,7 @@ void ChaChaRNG::seed(uint64_t seed) {
     position = 16;
 }
 
-uint32_t ChaChaRNG::next_uint32() {
+uint32_t ChaChaRNG::next_uint32() noexcept {
     check_reseed();
     if (position >= 16) {
         generate_block();
@@ -272,7 +216,7 @@ uint32_t ChaChaRNG::next_uint32() {
     return block[position++];
 }
 
-float ChaChaRNG::next_float() {
+float ChaChaRNG::next_float() noexcept {
     uint32_t val = next_uint32() >> 8;
     return static_cast<float>(val) / 16777216.0f;
 }
@@ -311,28 +255,17 @@ ChaChaRNG::~ChaChaRNG() {
     position = 0;
 }
 
-// Global Random Generators Implementation
-namespace RandomixGenerators {
-    std::mutex prng_mutex;
-    std::mutex csprng_mutex;
+// Global Singleton Implementation
+namespace Randomix {
+    std::mutex rng_mutex;
     
-    PCG32& GetPRNG() {
-        static PCG32 instance(0);
-        return instance;
-    }
-    
-    ChaChaRNG& GetCSPRNG() {
+    ChaChaRNG& GetRNG() {
         static ChaChaRNG instance(0);
         return instance;
     }
     
-    void SeedPRNG(uint64_t seed) {
-        std::lock_guard<std::mutex> lock(prng_mutex);
-        GetPRNG().seed(seed);
-    }
-    
-    void SeedCSPRNG(uint64_t seed) {
-        std::lock_guard<std::mutex> lock(csprng_mutex);
-        GetCSPRNG().seed(seed);
+    void Seed(uint64_t seed) {
+        std::lock_guard<std::mutex> lock(rng_mutex);
+        GetRNG().seed(seed);
     }
 }

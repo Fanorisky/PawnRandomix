@@ -1,7 +1,6 @@
 /*
- *  Randomix - Enhanced Random Number Generator for open.mp Servers
- *  Copyright (c) 2025, Fanorisky
- *  GitHub: github.com/Fanorisky/PawnRandomix
+ *  Randomix - Cryptographic Random Number Generator for open.mp
+ *  Version: 2.0.0 (CSPRNG Only - ChaCha20)
  */
 
 #include "randomix.hpp"
@@ -12,185 +11,58 @@
 
 #include <chrono>
 #include <cmath>
+#include <algorithm>
 
-// Helper Functions for Pawn
 static inline cell* GetArrayPtr(AMX* amx, cell param) {
     cell* addr = nullptr;
     amx_GetAddr(amx, param, &addr);
     return addr;
 }
 
-// Main Component
-class RandomixComponent final : public IComponent, public PawnEventHandler {
-private:
-    ICore* core_ = nullptr;
-    IPawnComponent* pawn_ = nullptr;
-    
-public:
-    PROVIDE_UID(0x4D52616E646F6D69);
-    
-    ~RandomixComponent() {
-        if (pawn_) {
-            pawn_->getEventDispatcher().removeEventHandler(this);
-        }
-    }
-    
-    StringView componentName() const override {
-        return "Randomix";
-    }
-    
-    SemanticVersion componentVersion() const override {
-        return SemanticVersion(1, 2, 0, 0);
-    }
-    
-    void onLoad(ICore* c) override {
-        core_ = c;
-        
-        uint64_t seed = static_cast<uint64_t>(
-            std::chrono::system_clock::now().time_since_epoch().count()
-        );
-        
-        RandomixGenerators::SeedPRNG(seed);
-        RandomixGenerators::SeedCSPRNG(seed);
-        
-        core_->printLn("");
-        core_->printLn("  Randomix Component Loaded");
-        core_->printLn("  Version: v%s", RANDOMIX_VERSION);
-        core_->printLn("  Author: Fanorisky");
-        core_->printLn("  GitHub: github.com/Fanorisky/PawnRandomix");
-        core_->printLn("");
-        
-        setAmxLookups(core_);
-    }
-    
-    void onInit(IComponentList* components) override {
-        pawn_ = components->queryComponent<IPawnComponent>();
-        
-        if (pawn_) {
-            setAmxFunctions(pawn_->getAmxFunctions());
-            setAmxLookups(components);
-            pawn_->getEventDispatcher().addEventHandler(this);
-        }
-    }
-    
-    void onAmxLoad(IPawnScript& script) override {
-        pawn_natives::AmxLoad(script.GetAMX());
-    }
-    
-    void onAmxUnload(IPawnScript& script) override {}
-    
-    void onReady() override {}
-    
-    void onFree(IComponent* component) override {
-        if (component == pawn_) {
-            if (pawn_) {
-                pawn_->getEventDispatcher().removeEventHandler(this);
-            }
-            pawn_ = nullptr;
-            setAmxFunctions();
-            setAmxLookups();
-        }
-    }
-    
-    void free() override {
-        delete this;
-    }
-    
-    void reset() override {
-        uint64_t seed = static_cast<uint64_t>(
-            std::chrono::system_clock::now().time_since_epoch().count()
-        );
-        
-        RandomixGenerators::SeedPRNG(seed);
-        RandomixGenerators::SeedCSPRNG(seed);
-    }
-};
+// ============================================================
+// CORE RANDOM FUNCTIONS (Unified CSPRNG)
+// ============================================================
 
-COMPONENT_ENTRY_POINT() {
-    return new RandomixComponent();
-}
-
-
-// Random within specific range (PRNG)
-SCRIPT_API(PRandRange, int(int min, int max)) {
+SCRIPT_API(RandRange, int(int min, int max)) {
     if (min > max) std::swap(min, max);
     if (min == max) return min;
     
     uint32_t range = static_cast<uint32_t>(max - min);
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    return min + static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(range + 1));
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    return min + static_cast<int>(Randomix::GetRNG().next_bounded(range + 1));
 }
 
-// Random within specific range (CSPRNG)
-SCRIPT_API(CSPRandRange, int(int min, int max)) {
+SCRIPT_API(RandFloatRange, float(float min, float max)) {
     if (min > max) std::swap(min, max);
     if (min == max) return min;
     
-    uint32_t range = static_cast<uint32_t>(max - min);
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
-    return min + static_cast<int>(RandomixGenerators::GetCSPRNG().next_bounded(range + 1));
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    return min + Randomix::GetRNG().next_float() * (max - min);
 }
 
-// Random float within range (PRNG)
-SCRIPT_API(PRandFloatRange, float(float min, float max)) {
-    if (min > max) std::swap(min, max);
-    if (min == max) return min;
-    
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    return min + RandomixGenerators::GetPRNG().next_float() * (max - min);
-}
-
-// Random float within range (CSPRNG)
-SCRIPT_API(CSPRandFloatRange, float(float min, float max)) {
-    if (min > max) std::swap(min, max);
-    if (min == max) return min;
-    
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
-    return min + RandomixGenerators::GetCSPRNG().next_float() * (max - min);
-}
-
-// Set seed for PRNG
-SCRIPT_API(SeedPRNG, int(int seed)) {
-    RandomixGenerators::SeedPRNG(static_cast<uint64_t>(seed));
+SCRIPT_API(SeedRNG, int(int seed)) {
+    Randomix::Seed(static_cast<uint64_t>(seed));
     return 1;
 }
 
-// Set seed for CSPRNG
-SCRIPT_API(SeedCSPRNG, int(int seed)) {
-    RandomixGenerators::SeedCSPRNG(static_cast<uint64_t>(seed));
-    return 1;
-}
-
-// Random boolean with probability (PRNG)
-SCRIPT_API(PRandBool, bool(float probability)) {
+SCRIPT_API(RandBool, bool(float probability)) {
     if (probability <= 0.0f) return false;
     if (probability >= 1.0f) return true;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    return RandomixGenerators::GetPRNG().next_float() < probability;
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    return Randomix::GetRNG().next_float() < probability;
 }
 
-// Random boolean with probability (CSPRNG)
-SCRIPT_API(CSPRandBool, bool(float probability)) {
-    if (probability <= 0.0f) return false;
-    if (probability >= 1.0f) return true;
-    
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
-    return RandomixGenerators::GetCSPRNG().next_float() < probability;
+SCRIPT_API(RandBoolWeighted, bool(int trueWeight, int falseWeight)) {
+    if (trueWeight <= 0) return false;
+    if (falseWeight <= 0) return true;
+
+    uint32_t total = static_cast<uint32_t>(trueWeight + falseWeight);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    return Randomix::GetRNG().next_bounded(total) < static_cast<uint32_t>(trueWeight);
 }
 
-// Random boolean with weights (trueWeight vs falseWeight)
-SCRIPT_API(PRandBoolWeighted, bool(int trueW, int falseW)) {
-    if (trueW <= 0) return false;
-    if (falseW <= 0) return true;
-
-    uint32_t total = static_cast<uint32_t>(trueW + falseW);
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    return RandomixGenerators::GetPRNG().next_bounded(total) < static_cast<uint32_t>(trueW);
-}
-
-// Weighted random selection
-SCRIPT_API(PRandWeighted, int(cell weightsAddr, int count)) {
+SCRIPT_API(RandWeighted, int(cell weightsAddr, int count)) {
     if (count <= 0) return 0;
     
     cell* weights = GetArrayPtr(GetAMX(), weightsAddr);
@@ -205,8 +77,8 @@ SCRIPT_API(PRandWeighted, int(cell weightsAddr, int count)) {
     
     if (total == 0) return 0;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    uint32_t rand = RandomixGenerators::GetPRNG().next_bounded(total);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    uint32_t rand = Randomix::GetRNG().next_bounded(total);
     uint32_t sum = 0;
     
     for (int i = 0; i < count; i++) {
@@ -219,49 +91,45 @@ SCRIPT_API(PRandWeighted, int(cell weightsAddr, int count)) {
     return count - 1;
 }
 
-// Shuffle array (Fisher-Yates algorithm)
-SCRIPT_API(PRandShuffle, bool(cell arrayAddr, int count)) {
+SCRIPT_API(RandShuffle, bool(cell arrayAddr, int count)) {
     if (count <= 1) return true;
     
     cell* array = GetArrayPtr(GetAMX(), arrayAddr);
     if (!array) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
     
     for (int i = count - 1; i > 0; i--) {
-        int j = static_cast<int>(RandomixGenerators::GetPRNG().next_bounded(i + 1));
+        int j = static_cast<int>(Randomix::GetRNG().next_bounded(i + 1));
         std::swap(array[i], array[j]);
     }
     
     return true;
 }
 
-// Shuffle part of array (specific range)
-SCRIPT_API(PRandShuffleRange, bool(cell arrayAddr, int start, int end)) {
+SCRIPT_API(RandShuffleRange, bool(cell arrayAddr, int start, int end)) {
     cell* array = GetArrayPtr(GetAMX(), arrayAddr);
     if (!array) return false;
 
     if (start > end) std::swap(start, end);
     if (end - start < 1) return true;
 
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
 
     for (int i = end; i > start; i--) {
-        int j = start + RandomixGenerators::GetPRNG().next_bounded(i - start + 1);
+        int j = start + Randomix::GetRNG().next_bounded(i - start + 1);
         std::swap(array[i], array[j]);
     }
     return true;
 }
 
-// Gaussian/Normal distribution (Box-Muller transform)
-SCRIPT_API(PRandGaussian, int(float mean, float stddev)) {
+SCRIPT_API(RandGaussian, int(float mean, float stddev)) {
     if (stddev <= 0.0f) return static_cast<int>(mean);
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
     
-    float u1 = RandomixGenerators::GetPRNG().next_float();
-    float u2 = RandomixGenerators::GetPRNG().next_float();
-    
+    float u1 = Randomix::GetRNG().next_float();
+    float u2 = Randomix::GetRNG().next_float();
     if (u1 < 1e-10f) u1 = 1e-10f;
     
     float z0 = sqrtf(-2.0f * logf(u1)) * cosf(6.28318530718f * u2);
@@ -270,64 +138,105 @@ SCRIPT_API(PRandGaussian, int(float mean, float stddev)) {
     return static_cast<int>(result < 0.0f ? 0.0f : result);
 }
 
-// D&D style dice roll (e.g., 3d6 = 3 dice with 6 sides each)
-SCRIPT_API(PRandDice, int(int sides, int count)) {
+SCRIPT_API(RandDice, int(int sides, int count)) {
     if (sides <= 0 || count <= 0) return 0;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
     uint32_t total = 0;
     uint32_t uSides = static_cast<uint32_t>(sides);
     
     for (int i = 0; i < count; i++) {
-        total += RandomixGenerators::GetPRNG().next_bounded(uSides) + 1;
+        total += Randomix::GetRNG().next_bounded(uSides) + 1;
     }
     
     return static_cast<int>(total);
 }
 
-// Generate hexadecimal token
-SCRIPT_API(CSPRandToken, int(int length)) {
-    if (length <= 0) return 0;
+SCRIPT_API(RandPick, int(cell arrayAddr, int count)) {
+    if (count <= 0) return 0;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    cell* array = GetArrayPtr(GetAMX(), arrayAddr);
+    if (!array) return 0;
     
-    uint32_t token = 0;
-    int actualLength = (length > 8) ? 8 : length;
-    
-    for (int i = 0; i < actualLength; i++) {
-        token = (token << 4) | (RandomixGenerators::GetCSPRNG().next_bounded(16));
-    }
-    
-    return static_cast<int>(token);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    uint32_t idx = Randomix::GetRNG().next_bounded(static_cast<uint32_t>(count));
+    return array[idx];
 }
 
-// Generate random bytes for cryptographic purposes
-SCRIPT_API(CSPRandBytes, bool(cell destAddr, int length)) {
+SCRIPT_API(RandFormat, bool(cell destAddr, cell patternAddr, int destSize)) {
+    if (destSize <= 0) return false;
+    
+    cell* dest = GetArrayPtr(GetAMX(), destAddr);
+    cell* pattern = GetArrayPtr(GetAMX(), patternAddr);
+    if (!dest || !pattern) return false;
+    
+    static const char* upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static const char* lower = "abcdefghijklmnopqrstuvwxyz";
+    static const char* digit = "0123456789";
+    static const char* alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    static const char* symbol = "!@#$%^&*()_+-=[]{}|;:,.<>?";
+    
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    auto& rng = Randomix::GetRNG();
+    
+    int outPos = 0;
+    for (int i = 0; pattern[i] != '\0' && outPos < destSize - 1; i++) {
+        char c = static_cast<char>(pattern[i]);
+        const char* charset = nullptr;
+        size_t len = 0;
+        
+        switch (c) {
+            case 'X': charset = upper; len = 26; break;
+            case 'x': charset = lower; len = 26; break;
+            case '9': charset = digit; len = 10; break;
+            case 'A': charset = alpha; len = 62; break;
+            case '!': charset = symbol; len = 25; break;
+            default:
+                if (c == '\\' && pattern[i+1] != '\0') {
+                    i++;
+                    dest[outPos++] = pattern[i];
+                } else {
+                    dest[outPos++] = pattern[i];
+                }
+                continue;
+        }
+        
+        if (charset && len > 0) {
+            uint32_t idx = rng.next_bounded(static_cast<uint32_t>(len));
+            dest[outPos++] = static_cast<cell>(charset[idx]);
+        }
+    }
+    
+    dest[outPos] = '\0';
+    return true;
+}
+
+// ============================================================
+// CRYPTOGRAPHIC FUNCTIONS
+// ============================================================
+
+SCRIPT_API(RandBytes, bool(cell destAddr, int length)) {
     if (length <= 0) return false;
 
     cell* dest = GetArrayPtr(GetAMX(), destAddr);
     if (!dest) return false;
 
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
 
     for (int i = 0; i < length; i++) {
-        dest[i] = static_cast<cell>(
-            RandomixGenerators::GetCSPRNG().next_uint32() & 0xFF
-        );
+        dest[i] = static_cast<cell>(Randomix::GetRNG().next_uint32() & 0xFF);
     }
     return true;
 }
 
-// Generate UUID v4 (Universally Unique Identifier)
-SCRIPT_API(CSPRandUUID, bool(cell destAddr)) {
+SCRIPT_API(RandUUID, bool(cell destAddr)) {
     cell* out = GetArrayPtr(GetAMX(), destAddr);
     if (!out) return false;
 
     uint8_t bytes[16];
     {
-        std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
-        RandomixGenerators::GetCSPRNG().next_bytes(bytes, 16);
+        std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+        Randomix::GetRNG().next_bytes(bytes, 16);
     }
 
     bytes[6] = (bytes[6] & 0x0F) | 0x40;
@@ -350,15 +259,11 @@ SCRIPT_API(CSPRandUUID, bool(cell destAddr)) {
     return true;
 }
 
-// ============================================
-// 2D POINT FUNCTIONS - FIXED VERSION
-// ============================================
+// ============================================================
+// 2D GEOMETRY
+// ============================================================
 
-/**
- * Generate random point in circle (uniform distribution)
- * Uses polar rejection method for true uniform distribution
- */
-SCRIPT_API(PRandPointInCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
+SCRIPT_API(RandPointInCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
     if (radius <= 0.0f) return false;
     
     cell* xAddr = GetArrayPtr(GetAMX(), outX);
@@ -366,22 +271,16 @@ SCRIPT_API(PRandPointInCircle, bool(float centerX, float centerY, float radius, 
     
     if (!xAddr || !yAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    // Square root method for uniform distribution
-    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f; // 2π
-    float r = radius * sqrtf(RandomixGenerators::GetPRNG().next_float());
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    float angle = Randomix::GetRNG().next_float() * 6.28318530718f;
+    float r = radius * sqrtf(Randomix::GetRNG().next_float());
     
     *reinterpret_cast<float*>(xAddr) = centerX + r * cosf(angle);
     *reinterpret_cast<float*>(yAddr) = centerY + r * sinf(angle);
-    
     return true;
 }
 
-/**
- * CSPRNG version
- */
-SCRIPT_API(CSPRandPointInCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
+SCRIPT_API(RandPointOnCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
     if (radius <= 0.0f) return false;
     
     cell* xAddr = GetArrayPtr(GetAMX(), outX);
@@ -389,42 +288,15 @@ SCRIPT_API(CSPRandPointInCircle, bool(float centerX, float centerY, float radius
     
     if (!xAddr || !yAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
-    
-    float angle = RandomixGenerators::GetCSPRNG().next_float() * 6.28318530718f;
-    float r = radius * sqrtf(RandomixGenerators::GetCSPRNG().next_float());
-    
-    *reinterpret_cast<float*>(xAddr) = centerX + r * cosf(angle);
-    *reinterpret_cast<float*>(yAddr) = centerY + r * sinf(angle);
-    
-    return true;
-}
-
-/**
- * Generate random point on circle edge (circumference)
- */
-SCRIPT_API(PRandPointOnCircle, bool(float centerX, float centerY, float radius, cell outX, cell outY)) {
-    if (radius <= 0.0f) return false;
-    
-    cell* xAddr = GetArrayPtr(GetAMX(), outX);
-    cell* yAddr = GetArrayPtr(GetAMX(), outY);
-    
-    if (!xAddr || !yAddr) return false;
-    
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f;
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    float angle = Randomix::GetRNG().next_float() * 6.28318530718f;
     
     *reinterpret_cast<float*>(xAddr) = centerX + radius * cosf(angle);
     *reinterpret_cast<float*>(yAddr) = centerY + radius * sinf(angle);
-    
     return true;
 }
 
-/**
- * Generate random point in rectangle
- */
-SCRIPT_API(PRandPointInRect, bool(float minX, float minY, float maxX, float maxY, cell outX, cell outY)) {
+SCRIPT_API(RandPointInRect, bool(float minX, float minY, float maxX, float maxY, cell outX, cell outY)) {
     if (minX > maxX) std::swap(minX, maxX);
     if (minY > maxY) std::swap(minY, maxY);
     
@@ -433,18 +305,13 @@ SCRIPT_API(PRandPointInRect, bool(float minX, float minY, float maxX, float maxY
     
     if (!xAddr || !yAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    *reinterpret_cast<float*>(xAddr) = minX + RandomixGenerators::GetPRNG().next_float() * (maxX - minX);
-    *reinterpret_cast<float*>(yAddr) = minY + RandomixGenerators::GetPRNG().next_float() * (maxY - minY);
-    
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    *reinterpret_cast<float*>(xAddr) = minX + Randomix::GetRNG().next_float() * (maxX - minX);
+    *reinterpret_cast<float*>(yAddr) = minY + Randomix::GetRNG().next_float() * (maxY - minY);
     return true;
 }
 
-/**
- * Generate random point in ring (donut shape)
- */
-SCRIPT_API(PRandPointInRing, bool(float centerX, float centerY, float innerRadius, float outerRadius, cell outX, cell outY)) {
+SCRIPT_API(RandPointInRing, bool(float centerX, float centerY, float innerRadius, float outerRadius, cell outX, cell outY)) {
     if (innerRadius < 0.0f || outerRadius <= 0.0f || innerRadius >= outerRadius) return false;
     
     cell* xAddr = GetArrayPtr(GetAMX(), outX);
@@ -452,25 +319,18 @@ SCRIPT_API(PRandPointInRing, bool(float centerX, float centerY, float innerRadiu
     
     if (!xAddr || !yAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f;
-    
-    // Uniform distribution in ring
-    float innerRadiusSq = innerRadius * innerRadius;
-    float outerRadiusSq = outerRadius * outerRadius;
-    float r = sqrtf(innerRadiusSq + RandomixGenerators::GetPRNG().next_float() * (outerRadiusSq - innerRadiusSq));
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    float angle = Randomix::GetRNG().next_float() * 6.28318530718f;
+    float innerSq = innerRadius * innerRadius;
+    float outerSq = outerRadius * outerRadius;
+    float r = sqrtf(innerSq + Randomix::GetRNG().next_float() * (outerSq - innerSq));
     
     *reinterpret_cast<float*>(xAddr) = centerX + r * cosf(angle);
     *reinterpret_cast<float*>(yAddr) = centerY + r * sinf(angle);
-    
     return true;
 }
 
-/**
- * Generate random point in ellipse
- */
-SCRIPT_API(PRandPointInEllipse, bool(float centerX, float centerY, float radiusX, float radiusY, cell outX, cell outY)) {
+SCRIPT_API(RandPointInEllipse, bool(float centerX, float centerY, float radiusX, float radiusY, cell outX, cell outY)) {
     if (radiusX <= 0.0f || radiusY <= 0.0f) return false;
     
     cell* xAddr = GetArrayPtr(GetAMX(), outX);
@@ -478,54 +338,41 @@ SCRIPT_API(PRandPointInEllipse, bool(float centerX, float centerY, float radiusX
     
     if (!xAddr || !yAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    float angle = RandomixGenerators::GetPRNG().next_float() * 6.28318530718f;
-    float r = sqrtf(RandomixGenerators::GetPRNG().next_float());
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    float angle = Randomix::GetRNG().next_float() * 6.28318530718f;
+    float r = sqrtf(Randomix::GetRNG().next_float());
     
     *reinterpret_cast<float*>(xAddr) = centerX + radiusX * r * cosf(angle);
     *reinterpret_cast<float*>(yAddr) = centerY + radiusY * r * sinf(angle);
-    
     return true;
 }
 
-/**
- * Generate random point in triangle
- */
-SCRIPT_API(PRandPointInTriangle, bool(float x1, float y1, float x2, float y2, float x3, float y3, cell outX, cell outY)) {
+SCRIPT_API(RandPointInTriangle, bool(float x1, float y1, float x2, float y2, float x3, float y3, cell outX, cell outY)) {
     cell* xAddr = GetArrayPtr(GetAMX(), outX);
     cell* yAddr = GetArrayPtr(GetAMX(), outY);
     
     if (!xAddr || !yAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    // Barycentric coordinate method
-    float r1 = RandomixGenerators::GetPRNG().next_float();
-    float r2 = RandomixGenerators::GetPRNG().next_float();
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    float r1 = Randomix::GetRNG().next_float();
+    float r2 = Randomix::GetRNG().next_float();
     
     if (r1 + r2 > 1.0f) {
         r1 = 1.0f - r1;
         r2 = 1.0f - r2;
     }
-    
     float r3 = 1.0f - r1 - r2;
     
     *reinterpret_cast<float*>(xAddr) = r1 * x1 + r2 * x2 + r3 * x3;
     *reinterpret_cast<float*>(yAddr) = r1 * y1 + r2 * y2 + r3 * y3;
-    
     return true;
 }
 
-// ============================================
-// 3D POINT FUNCTIONS - FIXED VERSION
-// ============================================
+// ============================================================
+// 3D GEOMETRY
+// ============================================================
 
-/**
- * Generate random point in sphere (uniform distribution)
- * Fixed: Correct method for uniform distribution in sphere
- */
-SCRIPT_API(PRandPointInSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
+SCRIPT_API(RandPointInSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
     if (radius <= 0.0f) return false;
     
     cell* xAddr = GetArrayPtr(GetAMX(), outX);
@@ -534,31 +381,25 @@ SCRIPT_API(PRandPointInSphere, bool(float centerX, float centerY, float centerZ,
     
     if (!xAddr || !yAddr || !zAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
     
-    // Rejection method for uniform distribution in sphere
     float x, y, z, sq;
     do {
-        x = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
-        y = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
-        z = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
+        x = Randomix::GetRNG().next_float() * 2.0f - 1.0f;
+        y = Randomix::GetRNG().next_float() * 2.0f - 1.0f;
+        z = Randomix::GetRNG().next_float() * 2.0f - 1.0f;
         sq = x * x + y * y + z * z;
     } while (sq > 1.0f || sq == 0.0f);
     
-    // Scale to uniform distribution within sphere
-    float scale = radius * cbrtf(RandomixGenerators::GetPRNG().next_float()) / sqrtf(sq);
+    float scale = radius * cbrtf(Randomix::GetRNG().next_float()) / sqrtf(sq);
     
     *reinterpret_cast<float*>(xAddr) = centerX + x * scale;
     *reinterpret_cast<float*>(yAddr) = centerY + y * scale;
     *reinterpret_cast<float*>(zAddr) = centerZ + z * scale;
-    
     return true;
 }
 
-/**
- * CSPRNG version
- */
-SCRIPT_API(CSPRandPointInSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
+SCRIPT_API(RandPointOnSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
     if (radius <= 0.0f) return false;
     
     cell* xAddr = GetArrayPtr(GetAMX(), outX);
@@ -567,45 +408,12 @@ SCRIPT_API(CSPRandPointInSphere, bool(float centerX, float centerY, float center
     
     if (!xAddr || !yAddr || !zAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::csprng_mutex);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
     
-    float x, y, z, sq;
-    do {
-        x = RandomixGenerators::GetCSPRNG().next_float() * 2.0f - 1.0f;
-        y = RandomixGenerators::GetCSPRNG().next_float() * 2.0f - 1.0f;
-        z = RandomixGenerators::GetCSPRNG().next_float() * 2.0f - 1.0f;
-        sq = x * x + y * y + z * z;
-    } while (sq > 1.0f || sq == 0.0f);
-    
-    float scale = radius * cbrtf(RandomixGenerators::GetCSPRNG().next_float()) / sqrtf(sq);
-    
-    *reinterpret_cast<float*>(xAddr) = centerX + x * scale;
-    *reinterpret_cast<float*>(yAddr) = centerY + y * scale;
-    *reinterpret_cast<float*>(zAddr) = centerZ + z * scale;
-    
-    return true;
-}
-
-/**
- * Generate random point on sphere surface
- * Fixed: Correct method for uniform distribution on sphere surface
- */
-SCRIPT_API(PRandPointOnSphere, bool(float centerX, float centerY, float centerZ, float radius, cell outX, cell outY, cell outZ)) {
-    if (radius <= 0.0f) return false;
-    
-    cell* xAddr = GetArrayPtr(GetAMX(), outX);
-    cell* yAddr = GetArrayPtr(GetAMX(), outY);
-    cell* zAddr = GetArrayPtr(GetAMX(), outZ);
-    
-    if (!xAddr || !yAddr || !zAddr) return false;
-    
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    // Marsaglia's method for uniform distribution on sphere surface
     float u, v, s;
     do {
-        u = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
-        v = RandomixGenerators::GetPRNG().next_float() * 2.0f - 1.0f;
+        u = Randomix::GetRNG().next_float() * 2.0f - 1.0f;
+        v = Randomix::GetRNG().next_float() * 2.0f - 1.0f;
         s = u * u + v * v;
     } while (s >= 1.0f || s == 0.0f);
     
@@ -614,14 +422,10 @@ SCRIPT_API(PRandPointOnSphere, bool(float centerX, float centerY, float centerZ,
     *reinterpret_cast<float*>(xAddr) = centerX + radius * u * multiplier;
     *reinterpret_cast<float*>(yAddr) = centerY + radius * v * multiplier;
     *reinterpret_cast<float*>(zAddr) = centerZ + radius * (1.0f - 2.0f * s);
-    
     return true;
 }
 
-/**
- * Generate random point in box (cuboid)
- */
-SCRIPT_API(PRandPointInBox, bool(float minX, float minY, float minZ, float maxX, float maxY, float maxZ, cell outX, cell outY, cell outZ)) {
+SCRIPT_API(RandPointInBox, bool(float minX, float minY, float minZ, float maxX, float maxY, float maxZ, cell outX, cell outY, cell outZ)) {
     if (minX > maxX) std::swap(minX, maxX);
     if (minY > maxY) std::swap(minY, maxY);
     if (minZ > maxZ) std::swap(minZ, maxZ);
@@ -632,24 +436,18 @@ SCRIPT_API(PRandPointInBox, bool(float minX, float minY, float minZ, float maxX,
     
     if (!xAddr || !yAddr || !zAddr) return false;
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
-    
-    *reinterpret_cast<float*>(xAddr) = minX + RandomixGenerators::GetPRNG().next_float() * (maxX - minX);
-    *reinterpret_cast<float*>(yAddr) = minY + RandomixGenerators::GetPRNG().next_float() * (maxY - minY);
-    *reinterpret_cast<float*>(zAddr) = minZ + RandomixGenerators::GetPRNG().next_float() * (maxZ - minZ);
-    
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
+    *reinterpret_cast<float*>(xAddr) = minX + Randomix::GetRNG().next_float() * (maxX - minX);
+    *reinterpret_cast<float*>(yAddr) = minY + Randomix::GetRNG().next_float() * (maxY - minY);
+    *reinterpret_cast<float*>(zAddr) = minZ + Randomix::GetRNG().next_float() * (maxZ - minZ);
     return true;
 }
 
-// ============================================
-// ADVANCED GEOMETRIC FUNCTIONS - FIXED VERSION
-// ============================================
+// ============================================================
+// ADVANCED GEOMETRY
+// ============================================================
 
-/**
- * Generate random point in convex polygon (2D)
- * Uses triangulation method
- */
-SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell outX, cell outY)) {
+SCRIPT_API(RandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell outX, cell outY)) {
     if (vertexCount < 3) return false;
     
     cell* verticesPtr = GetArrayPtr(GetAMX(), verticesAddr);
@@ -658,12 +456,10 @@ SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell ou
     
     if (!verticesPtr || !xAddr || !yAddr) return false;
     
-    // Cast to float pointer for easier access
     float* vertices = reinterpret_cast<float*>(verticesPtr);
     
-    std::lock_guard<std::mutex> lock(RandomixGenerators::prng_mutex);
+    std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
     
-    // Calculate total area using triangulation from first vertex
     float totalArea = 0.0f;
     std::vector<float> triangleAreas;
     
@@ -675,7 +471,6 @@ SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell ou
         float x3 = vertices[(i + 1) * 2];
         float y3 = vertices[(i + 1) * 2 + 1];
         
-        // Triangle area using cross product
         float area = fabsf((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)) * 0.5f;
         triangleAreas.push_back(area);
         totalArea += area;
@@ -683,8 +478,7 @@ SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell ou
     
     if (totalArea <= 0.0f) return false;
     
-    // Select random triangle based on area weights
-    float rand = RandomixGenerators::GetPRNG().next_float() * totalArea;
+    float rand = Randomix::GetRNG().next_float() * totalArea;
     float sum = 0.0f;
     int selectedTriangle = 0;
     
@@ -696,7 +490,6 @@ SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell ou
         }
     }
     
-    // Generate point in selected triangle
     float x1 = vertices[0];
     float y1 = vertices[1];
     float x2 = vertices[(selectedTriangle + 1) * 2];
@@ -704,8 +497,8 @@ SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell ou
     float x3 = vertices[(selectedTriangle + 2) * 2];
     float y3 = vertices[(selectedTriangle + 2) * 2 + 1];
     
-    float r1 = RandomixGenerators::GetPRNG().next_float();
-    float r2 = RandomixGenerators::GetPRNG().next_float();
+    float r1 = Randomix::GetRNG().next_float();
+    float r2 = Randomix::GetRNG().next_float();
     
     if (r1 + r2 > 1.0f) {
         r1 = 1.0f - r1;
@@ -718,4 +511,83 @@ SCRIPT_API(PRandPointInPolygon, bool(cell verticesAddr, int vertexCount, cell ou
     *reinterpret_cast<float*>(yAddr) = r1 * y1 + r2 * y2 + r3 * y3;
     
     return true;
+}
+
+// ============================================================
+// COMPONENT CLASS
+// ============================================================
+
+class RandomixComponent final : public IComponent, public PawnEventHandler {
+private:
+    ICore* core_ = nullptr;
+    IPawnComponent* pawn_ = nullptr;
+    
+public:
+    PROVIDE_UID(0x4D52616E646F6D69);
+    
+    ~RandomixComponent() {
+        if (pawn_) {
+            pawn_->getEventDispatcher().removeEventHandler(this);
+        }
+    }
+    
+    StringView componentName() const override { return "Randomix"; }
+    SemanticVersion componentVersion() const override { return SemanticVersion(2, 0, 0, 0); }
+    
+    void onLoad(ICore* c) override {
+        core_ = c;
+        
+        uint64_t seed = static_cast<uint64_t>(
+            std::chrono::system_clock::now().time_since_epoch().count()
+        );
+        Randomix::Seed(seed);
+        
+        core_->printLn("");
+        core_->printLn("  Randomix v2.0 Loaded");
+        core_->printLn("  Algorithm: ChaCha20 (Cryptographic)");
+        core_->printLn("  Security: CSPRNG Mode Only");
+        core_->printLn("");
+        
+        setAmxLookups(core_);
+    }
+    
+    void onInit(IComponentList* components) override {
+        pawn_ = components->queryComponent<IPawnComponent>();
+        if (pawn_) {
+            setAmxFunctions(pawn_->getAmxFunctions());
+            setAmxLookups(components);
+            pawn_->getEventDispatcher().addEventHandler(this);
+        }
+    }
+    
+    void onAmxLoad(IPawnScript& script) override {
+        pawn_natives::AmxLoad(script.GetAMX());
+    }
+    
+    void onAmxUnload(IPawnScript& script) override {}
+    void onReady() override {}
+    
+    void onFree(IComponent* component) override {
+        if (component == pawn_) {
+            if (pawn_) {
+                pawn_->getEventDispatcher().removeEventHandler(this);
+            }
+            pawn_ = nullptr;
+            setAmxFunctions();
+            setAmxLookups();
+        }
+    }
+    
+    void free() override { delete this; }
+    
+    void reset() override {
+        uint64_t seed = static_cast<uint64_t>(
+            std::chrono::system_clock::now().time_since_epoch().count()
+        );
+        Randomix::Seed(seed);
+    }
+};
+
+COMPONENT_ENTRY_POINT() {
+    return new RandomixComponent();
 }

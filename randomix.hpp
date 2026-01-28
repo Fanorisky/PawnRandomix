@@ -4,24 +4,6 @@
 #include <array>
 #include <mutex>
 
-// PCG32 - Fast Random Generator
-class PCG32 {
-private:
-    uint64_t state;
-    uint64_t inc;
-    
-    static constexpr uint64_t MULTIPLIER = 6364136223846793005ULL;
-    static constexpr uint64_t INCREMENT = 1442695040888963407ULL;
-    
-public:
-    PCG32(uint64_t seed = 0);
-    void seed(uint64_t seed);
-    uint32_t next_uint32();
-    float next_float();
-    uint32_t next_bounded(uint32_t bound);
-};
-
-// ChaChaRNG - Cryptographic Random
 class ChaChaRNG {
 private:
     static constexpr int ROUNDS = 20;
@@ -30,7 +12,7 @@ private:
     int position;
     uint64_t counter;
     uint64_t bytes_generated;
-    static constexpr uint64_t RESEED_THRESHOLD = 32 * 1024 * 1024;
+    static constexpr uint64_t RESEED_THRESHOLD = 1024ULL * 1024ULL * 1024ULL; // 1GB
     
     static constexpr uint32_t CONSTANTS[4] = {
         0x61707865, 0x3320646e, 0x79622d32, 0x6b206574
@@ -44,22 +26,25 @@ private:
     void expand_seed(uint64_t seed, uint32_t* output, size_t count);
     
 public:
-    ChaChaRNG(uint64_t seed = 0);
+    explicit ChaChaRNG(uint64_t seed = 0);
     ~ChaChaRNG();
+    
+    // Non-copyable for security
+    ChaChaRNG(const ChaChaRNG&) = delete;
+    ChaChaRNG& operator=(const ChaChaRNG&) = delete;
+    ChaChaRNG(ChaChaRNG&&) = delete;
+    ChaChaRNG& operator=(ChaChaRNG&&) = delete;
+    
     void seed(uint64_t seed);
-    uint32_t next_uint32();
-    float next_float();
+    uint32_t next_uint32() noexcept;
+    float next_float() noexcept;
     uint32_t next_bounded(uint32_t bound);
     void next_bytes(uint8_t* buffer, size_t length);
 };
 
-// Global Random Generators
-namespace RandomixGenerators {
-    extern std::mutex prng_mutex;
-    extern std::mutex csprng_mutex;
-    
-    PCG32& GetPRNG();
-    ChaChaRNG& GetCSPRNG();
-    void SeedPRNG(uint64_t seed);
-    void SeedCSPRNG(uint64_t seed);
+// Global Singleton
+namespace Randomix {
+    extern std::mutex rng_mutex;
+    ChaChaRNG& GetRNG();
+    void Seed(uint64_t seed);
 }
