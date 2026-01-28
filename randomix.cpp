@@ -3,8 +3,11 @@
 #include <algorithm>
 #include <cstring>
 
+// OS-specific headers for system entropy
 #ifdef _WIN32
     #include <windows.h>
+    #undef min
+    #undef max
 #elif defined(__linux__)
     #include <sys/syscall.h>
     #include <unistd.h>

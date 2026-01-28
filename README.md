@@ -20,9 +20,9 @@ Powered by **ChaCha20** stream cipher - the same algorithm used in TLS 1.3 and W
 5. Recompile
 
 ### SA-MP (Plugin)
-1. Download `randomix.dll` / `randomix.so`
+1. Download `Randomix.dll` / `Randomix.so`
 2. Place in server `plugins/` directory
-3. Add `randomix` to `server.cfg` (plugins line)
+3. Add `Randomix` to `server.cfg` (plugins line)
 4. Copy `Randomix.inc` to include directory
 5. Add `#include <Randomix>` to your scripts
 6. Recompile
