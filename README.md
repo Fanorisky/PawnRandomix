@@ -13,7 +13,7 @@ Powered by **ChaCha20** stream cipher - the same algorithm used in TLS 1.3 and W
 ## Installation
 
 ### open.mp
-1. Download `Randomix.dll` (Windows) or `Randomix.so` (Linux)
+1. Download `Randomix-win-x86.zip` (Windows) or `Randomix-linux-x86.tar.xz` (Linux)
 2. Place in server `components/` directory
 3. Copy `Randomix.inc` to `qawno/include/` or your Pawn include directory
 4. Add `#include <Randomix>` to your scripts
