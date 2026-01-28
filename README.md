@@ -20,7 +20,7 @@ Powered by **ChaCha20** stream cipher - the same algorithm used in TLS 1.3 and W
 5. Recompile
 
 ### SA-MP (Plugin)
-1. Download `Randomix.dll` / `Randomix.so`
+1. Download `Randomix-win-x86.zip` (Windows) or `Randomix-linux-x86.tar.xz` (Linux)
 2. Place in server `plugins/` directory
 3. Add `Randomix` to `server.cfg` (plugins line)
 4. Copy `Randomix.inc` to include directory
