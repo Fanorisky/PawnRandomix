@@ -179,9 +179,6 @@ RandomElement(array, size)     // Random index access
 
 - **Algorithm**: ChaCha20 (20 rounds)
 - **Security**: 256-bit key, 64-bit nonce
-- **Reseeding**: Automatic after 1GB of output
-- **Memory**: ~150 bytes per instance (singleton)
-- **Threading**: Mutex-protected (safe for multi-thread)
 
 ## Credits
 
