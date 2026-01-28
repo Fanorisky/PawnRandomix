@@ -12,7 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # =========================
 # Build options
 # =========================
-option(BUILD_SAMP_PLUGIN "Build for SA-MP" OFF)
+option(BUILD_SAMP_PLUGIN "Build for SA-MP" ON)
 
 # =========================
 # SA-MP build
