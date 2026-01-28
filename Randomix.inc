@@ -1,10 +1,8 @@
 // ==============================
 // Randomix Include File
-// Version: 1.2.0
+// Version: 2.0.0 (CSPRNG Only)
 // Author: Fanorisky
-// ==============================
-// PRNG (PCG32): Fast statistical random
-// CSPRNG (ChaCha20): Cryptographically secure random
+// Algorithm: ChaCha20 (Cryptographic)
 // ==============================
 
 #if defined _randomix_included
@@ -12,326 +10,439 @@
 #endif
 #define _randomix_included
 
-// PRNG Functions (PCG32)
+// ==============================
+// 1. CORE RANDOM FUNCTIONS (ChaCha20 CSPRNG)
+// ==============================
 
 /**
- * Generate random integer from 0 to max-1 (exclusive)
- * @param max Maximum value (exclusive)
- * @return Random integer [0, max-1]
+ * Seed the RNG generator
+ * @param seed Seed value
+ * @return 1 on success
+ * @warning Seeding compromises forward secrecy. Use only for testing/replay.
+ * @note By default, auto-seeds from OS entropy on plugin load
  */
-native PRandom(max);
+native SeedRNG(seed);
 
 /**
- * Generate random integer in range [min, max-1] (exclusive)
+ * Generate cryptographically secure random integer in range [min, max] (inclusive)
  * @param min Minimum value (inclusive)
- * @param max Maximum value (exclusive)
- * @return Random integer [min, max-1]
+ * @param max Maximum value (inclusive)
+ * @return Random integer [min, max]
+ * @example RandRange(1, 6) returns 1-6 (secure dice roll)
+ * @note Uses rejection sampling for unbiased distribution
  */
-native PRandRange(min, max);
+native RandRange(min, max);
 
 /**
- * Generate random float in range [min, max)
+ * Generate cryptographically secure random float in range [min, max) (max exclusive)
  * @param min Minimum value (inclusive)
  * @param max Maximum value (exclusive)
  * @return Random float [min, max)
  */
-native Float:PRandFloatRange(Float:min, Float:max);
+native Float:RandFloatRange(Float:min, Float:max);
 
 /**
- * Generate random boolean with probability
- * @param probability Chance of returning true [0.0 - 1.0)
+ * Generate cryptographically secure random boolean with probability
+ * @param probability Chance of returning true [0.0 - 1.0]
  * @return true or false based on probability
- * @example PRandBool(0.3) // 30% chance of true
+ * @example RandBool(0.3) has 30% chance of true
  */
-native bool:PRandBool(Float:probability = 0.5);
+native bool:RandBool(Float:probability = 0.5);
 
 /**
  * Random boolean with weighted chance
  * @param trueWeight Weight for true result
  * @param falseWeight Weight for false result
  * @return true or false based on weights
- * @example PRandBoolWeighted(75, 25) // 75% true, 25% false
+ * @example RandBoolWeighted(75, 25) has 75% true, 25% false
  */
-native bool:PRandBoolWeighted(trueWeight, falseWeight);
+native bool:RandBoolWeighted(trueWeight, falseWeight);
 
 /**
  * Weighted random selection from array
- * @param weights[] Array of weights (higher = more likely)
- * @param count Number of elements in array
+ * @param weights[] Array of weights (higher = more likely, must be > 0)
+ * @param count Number of elements
  * @return Selected index based on weights [0, count-1]
- * @example
- *   new weights[] = {10, 30, 60}; // 10%, 30%, 60% chance
- *   new result = PRandWeighted(weights, 3);
+ * @example new weights[] = {10, 30, 60}; new result = RandWeighted(weights, 3);
  */
-native PRandWeighted(const weights[], count = sizeof weights);
+native RandWeighted(const weights[], count = sizeof weights);
 
 /**
- * Shuffle array randomly (in-place) using Fisher-Yates algorithm
+ * Shuffle array randomly (in-place) using Fisher-Yates
  * @param array[] Array to shuffle
  * @param count Number of elements
  * @return true on success
- * @example
- *   new players[10] = {0,1,2,3,4,5,6,7,8,9};
- *   PRandShuffle(players, 10);
  */
-native bool:PRandShuffle(array[], count = sizeof array);
+native bool:RandShuffle(array[], count = sizeof array);
 
 /**
  * Shuffle part of array (specific range)
  * @param array[] Array to shuffle
  * @param start Starting index (inclusive)
- * @param end Ending index (exclusive)
+ * @param end Ending index (inclusive)
  * @return true on success
- * @example
- *   new players[10] = {0,1,2,3,4,5,6,7,8,9};
- *   PRandShuffleRange(players, 3, 7); // Shuffle indices 3-6 only
  */
-native bool:PRandShuffleRange(array[], start, end);
+native bool:RandShuffleRange(array[], start, end);
 
 /**
  * Generate random number with Gaussian/Normal distribution
  * @param mean Center of distribution
- * @param stddev Standard deviation (spread)
- * @return Random integer following normal distribution
- * @example PRandGaussian(100.0, 15.0) // Average 100, ±15 spread
+ * @param stddev Standard deviation (spread, must be > 0)
+ * @return Random integer following normal distribution (clamped >= 0)
+ * @example RandGaussian(100.0, 15.0) typically returns 85-115
  */
-native PRandGaussian(Float:mean, Float:stddev);
+native RandGaussian(Float:mean, Float:stddev);
 
 /**
- * Roll dice (D&D style)
- * @param sides Number of sides on die [1-6, 8, 10, 12, 20, 100]
- * @param count Number of dice to roll
- * @return Sum of all dice rolls
+ * Roll dice (D&D style) with secure RNG
+ * @param sides Number of sides (must be > 0)
+ * @param count Number of dice (must be > 0)
+ * @return Sum of all dice [count, count*sides]
+ * @example RandDice(6, 2) rolls 2d6 (2-12)
+ */
+native RandDice(sides, count = 1);
+
+// ==============================
+// 2. UTILITY FUNCTIONS (NEW)
+// ==============================
+
+/**
+ * Pick random element from array (without modifying array)
+ * @param array[] Source array (integer or float treated as cell)
+ * @param count Number of elements
+ * @return Random element from array
+ * @example 
+ *   new weapons[] = {24, 25, 31, 34};
+ *   new gun = RandPick(weapons, sizeof(weapons));
+ * @note More efficient than RandShuffle if you only need 1 item
+ * @note Uses uniform distribution
+ */
+native RandPick(const array[], count = sizeof array);
+
+/**
+ * Generate random string based on pattern template
+ * @param dest[] Destination string array
+ * @param pattern[] Pattern template:
+ *   X = Uppercase A-Z
+ *   x = Lowercase a-z  
+ *   9 = Digit 0-9
+ *   A = Alphanumeric A-Z, a-z, 0-9
+ *   ! = Symbol !@#$%^&*()_+-=[]{}|;:,.<>?
+ *   \X = Literal character X (escape with backslash)
+ *   other chars = Copied literally (e.g., "-" stays "-")
+ * @param maxLen Maximum length of destination array (sizeof)
+ * @return 1 on success, 0 on failure (null pointer or overflow)
  * @example
- *   new damage = PRandDice(6, 2); // Roll 2d6
- *   new d20 = PRandDice(20, 1);   // Roll 1d20
+ *   new code[16];
+ *   RandFormat(code, "PROMO-XXXX-9999");    // "PROMO-KJQM-4829"
+ *   RandFormat(code, "LICENSE-9999-x");     // "LICENSE-4823-m"  
+ *   RandFormat(code, "v\\1.9A");            // "v1.9k" (literal \1)
+ *   RandFormat(code, "KEY_!9A");            // "KEY_@4p"
+ * @note Pattern length must be < maxLen to avoid truncation
+ * @note Uses CSPRNG untuk setiap karakter generated
  */
-native PRandDice(sides, count = 1);
+native bool:RandFormat(dest[], const pattern[], maxLen = sizeof dest);
 
-/**
- * Seed the PRNG generator
- * @param seed Seed value (use same seed for reproducible results)
- * @return 1 on success
- * @note Use this for debugging or replay systems
- */
-native SeedPRNG(seed);
-
-// CSPRNG Functions (ChaCha20)
-
-/**
- * Generate cryptographically secure random integer [0, max-1]
- * @param max Maximum value (exclusive)
- * @return Random integer [0, max-1]
- * @note Slower than PRNG but unpredictable
- */
-native CSPRandom(max);
-
-/**
- * Generate cryptographically secure random in range [min, max-1]
- * @param min Minimum value (inclusive)
- * @param max Maximum value (exclusive)
- * @return Random integer [min, max-1]
- */
-native CSPRandRange(min, max);
-
-/**
- * Generate cryptographically secure random float [min, max)
- * @param min Minimum value (inclusive)
- * @param max Maximum value (exclusive)
- * @return Random float [min, max)
- */
-native Float:CSPRandFloatRange(Float:min, Float:max);
-
-/**
- * Generate cryptographically secure random boolean
- * @param probability Chance of returning true [0.0 - 1.0)
- * @return true or false based on probability
- */
-native bool:CSPRandBool(Float:probability = 0.5);
-
-/**
- * Generate cryptographic token
- * @param length Token length in hexadecimal digits (1-8)
- * @return Random token value
- * @note Use for session IDs, temporary passwords, etc.
- * @example new token = CSPRandToken(8); // 8-digit hex token
- */
-native CSPRandToken(length);
+// ==============================
+// 3. CRYPTOGRAPHIC FUNCTIONS
+// ==============================
 
 /**
  * Fill array with cryptographically secure random bytes
  * @param dest[] Destination array
  * @param length Number of bytes to generate
  * @return true on success
- * @note Use for generating encryption keys, nonces, etc.
+ * @note Use for encryption keys, nonces, salts, session tokens
+ * @example new key[32]; RandBytes(key, 32); // 256-bit key
  */
-native bool:CSPRandBytes(dest[], length);
+native bool:RandBytes(dest[], length);
 
 /**
  * Generate UUID v4 (Universally Unique Identifier)
- * @param uuid[] Array to store UUID string (must be at least 37 cells)
+ * @param uuid[] Array to store UUID string (minimum 37 cells)
  * @return true on success
- * @note UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
- * @example 
- *   new uuid[37];
- *   CSPRandUUID(uuid);
- *   printf("Generated UUID: %s", uuid);
+ * @note UUID format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx (RFC 4122)
+ * @warning Array must be at least 37 cells (36 chars + null)
  */
-native bool:CSPRandUUID(uuid[]);
-
-/**
- * Seed the CSPRNG generator
- * @param seed Seed value
- * @return 1 on success
- * @warning Only use for testing! In production, let it auto-seed from OS
- */
-native SeedCSPRNG(seed);
+native bool:RandUUID(uuid[37]);
 
 // ==============================
-// Helper Macros
+// 4. 2D GEOMETRIC DISTRIBUTIONS
 // ==============================
 
 /**
- * Random chance helper - returns true X% of the time
+ * Generate random point inside circle (uniform distribution)
+ * @param centerX Circle center X
+ * @param centerY Circle center Y
+ * @param radius Circle radius (> 0)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ * @note Uses square root method for true uniform distribution (not naive r^2)
+ */
+native bool:RandPointInCircle(Float:centerX, Float:centerY, Float:radius, &Float:x, &Float:y);
+
+/**
+ * Generate random point ON circle edge (circumference only)
+ * @param centerX Circle center X
+ * @param centerY Circle center Y
+ * @param radius Circle radius (> 0)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ */
+native bool:RandPointOnCircle(Float:centerX, Float:centerY, Float:radius, &Float:x, &Float:y);
+
+/**
+ * Generate random point in rectangle
+ * @param minX Minimum X
+ * @param minY Minimum Y
+ * @param maxX Maximum X
+ * @param maxY Maximum Y
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ * @note If min > max, values are swapped automatically
+ */
+native bool:RandPointInRect(Float:minX, Float:minY, Float:maxX, Float:maxY, &Float:x, &Float:y);
+
+/**
+ * Generate random point in ring/donut (between two circles)
+ * @param centerX Center X
+ * @param centerY Center Y
+ * @param innerRadius Inner radius (>= 0)
+ * @param outerRadius Outer radius (> innerRadius)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ */
+native bool:RandPointInRing(Float:centerX, Float:centerY, Float:innerRadius, Float:outerRadius, &Float:x, &Float:y);
+
+/**
+ * Generate random point in ellipse
+ * @param centerX Center X
+ * @param centerY Center Y
+ * @param radiusX Horizontal radius (> 0)
+ * @param radiusY Vertical radius (> 0)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ */
+native bool:RandPointInEllipse(Float:centerX, Float:centerY, Float:radiusX, Float:radiusY, &Float:x, &Float:y);
+
+/**
+ * Generate random point in triangle
+ * @param x1,y1 First vertex
+ * @param x2,y2 Second vertex
+ * @param x3,y3 Third vertex
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ * @note Uses barycentric coordinates for uniform distribution
+ */
+native bool:RandPointInTriangle(Float:x1, Float:y1, Float:x2, Float:y2, Float:x3, Float:y3, &Float:x, &Float:y);
+
+// ==============================
+// 5. 3D GEOMETRIC DISTRIBUTIONS
+// ==============================
+
+/**
+ * Generate random point inside sphere (uniform volume)
+ * @param centerX Sphere center X
+ * @param centerY Sphere center Y
+ * @param centerZ Sphere center Z
+ * @param radius Sphere radius (> 0)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @param z Output Z (by reference)
+ * @return true on success
+ */
+native bool:RandPointInSphere(Float:centerX, Float:centerY, Float:centerZ, Float:radius, &Float:x, &Float:y, &Float:z);
+
+/**
+ * Generate random point ON sphere surface (shell)
+ * @param centerX Sphere center X
+ * @param centerY Sphere center Y
+ * @param centerZ Sphere center Z
+ * @param radius Sphere radius (> 0)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @param z Output Z (by reference)
+ * @return true on success
+ * @note Uses Marsaglia's method for uniform distribution on surface
+ */
+native bool:RandPointOnSphere(Float:centerX, Float:centerY, Float:centerZ, Float:radius, &Float:x, &Float:y, &Float:z);
+
+/**
+ * Generate random point in box/cuboid
+ * @param minX,minY,minZ Minimum corner
+ * @param maxX,maxY,maxZ Maximum corner
+ * @param x,y,z Output coordinates (by reference)
+ * @return true on success
+ */
+native bool:RandPointInBox(Float:minX, Float:minY, Float:minZ, Float:maxX, Float:maxY, Float:maxZ, &Float:x, &Float:y, &Float:z);
+
+// ==============================
+// 6. ADVANCED GEOMETRY
+// ==============================
+
+/**
+ * Generate random point in convex polygon (2D)
+ * @param vertices[] Flat array {x1, y1, x2, y2, ...}
+ * @param vertexCount Number of vertices (>= 3)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ * @note Polygon must be convex for uniform distribution
+ * @note Uses triangulation method weighted by area
+ */
+native bool:RandPointInPolygon(const Float:vertices[], vertexCount, &Float:x, &Float:y);
+
+// ==============================
+// 7. CONVENIENCE STOCK FUNCTIONS
+// ==============================
+
+/**
+ * Random integer [0, max-1]
+ * @param max Maximum value (exclusive)
+ * @return Random integer [0, max-1]
+ */
+stock Random(max) { 
+    return RandRange(0, max - 1); 
+}
+
+/**
+ * Random float [0.0, max)
+ * @param max Maximum value (exclusive)
+ * @return Random float [0.0, max)
+ */
+stock Float:RandFloat(Float:max) { 
+    return RandFloatRange(0.0, max); 
+}
+
+/**
+ * Random integer in range with excluded value
+ * @param min Minimum value (inclusive)
+ * @param max Maximum value (inclusive)
+ * @param except Value to exclude
+ * @return Random integer [min, max] except 'except'
+ * @note Efficient implementation without retry loop
+ */
+stock RandExcept(min, max, except) {
+    if (min > max) {
+        new temp = min;
+        min = max;
+        max = temp;
+    }
+    if (min == max) return min;
+    if (except < min || except > max) return RandRange(min, max);
+    
+    new result = RandRange(min, max - 1);
+    return (result >= except) ? (result + 1) : result;
+}
+
+/**
+ * Random RGB color (24-bit)
+ * @return Random color integer (0xRRGGBB)
+ * @example SetPlayerColor(playerid, RandomColor());
+ */
+stock RandomColor() {
+    return (Random(256) << 16) | (Random(256) << 8) | Random(256);
+}
+
+/**
+ * Random hex string
+ * @param dest[] Destination string
+ * @param len Length of hex string
+ * @return 1 on success, 0 if len <= 0
+ * @example new hex[9]; RandHexString(hex, 8); // "A3F5D2B1"
+ */
+stock RandHexString(dest[], len) {
+    if (len <= 0) return 0;
+    static const hex[] = "0123456789ABCDEF";
+    for (new i = 0; i < len; i++) {
+        dest[i] = hex[Random(16)];
+    }
+    dest[len] = EOS;
+    return 1;
+}
+
+/**
+ * Random alphanumeric string
+ * @param dest[] Destination string
+ * @param len Desired length (NOT including null terminator)
+ * @param charset[] Character set to use (default: alphanumeric)
+ * @return 1 on success, 0 if charset empty
+ * @note Destination must be at least len+1 cells
+ */
+stock RandString(dest[], len, const charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789") {
+    new charset_len = strlen(charset);
+    if (charset_len == 0) return 0;
+    for (new i = 0; i < len; i++) {
+        dest[i] = charset[Random(charset_len)];
+    }
+    dest[len] = EOS;
+    return 1;
+}
+
+/**
+ * Pick random element from float array
+ * @param array[] Float array
+ * @param count Number of elements
+ * @return Random float from array
+ * @note Workaround since RandPick works on cells
+ */
+stock Float:RandPickFloat(const Float:array[], count = sizeof array) {
+    new idx = RandRange(0, count - 1);
+    return array[idx];
+}
+
+// ==============================
+// 8. USEFUL MACROS
+// ==============================
+
+/**
+ * Random chance X%
  * @example if(RandomChance(25)) // 25% chance
  */
-#define RandomChance(%0) PRandBool(Float:(%0) / 100.0)
+#define RandomChance(%0) RandBool(Float:(%0) / 100.0)
 
 /**
- * Cryptographically secure random chance
- * @example if(SecureRandomChance(25)) // 25% chance with CSPRNG
+ * Flip a coin (50/50)
  */
-#define SecureRandomChance(%0) CSPRandBool(Float:(%0) / 100.0)
-
-/**
- * Flip a coin (50/50 chance)
- * @example if(CoinFlip()) // 50% chance
- */
-#define CoinFlip() PRandBool(0.5)
-
-/**
- * Secure coin flip (cryptographically secure)
- */
-#define SecureCoinFlip() CSPRandBool(0.5)
+#define CoinFlip() RandBool(0.5)
 
 /**
  * Random element from array
  * @example new item = RandomElement(items, sizeof(items));
  */
-#define RandomElement(%0,%1) %0[PRandom(%1)]
+#define RandomElement(%0,%1) %0[Random(%1)]
 
 /**
- * Secure random element from array
+ * Pick random from two options
+ * @example new color = RandomPick(0xFF0000, 0x00FF00);
  */
-#define SecureRandomElement(%0,%1) %0[CSPRandom(%1)]
+#define RandomPick(%0,%1) (RandBool(0.5) ? (%0) : (%1))
 
 /**
- * Roll standard D&D dice (fast PRNG)
+ * Shuffle entire array
+ * @example ShuffleArray(players);
  */
-#define RollD4()  PRandRange(1, 5)  // 1-4
-#define RollD6()  PRandRange(1, 7)  // 1-6
-#define RollD8()  PRandRange(1, 9)  // 1-8
-#define RollD10() PRandRange(1, 11) // 1-10
-#define RollD12() PRandRange(1, 13) // 1-12
-#define RollD20() PRandRange(1, 21) // 1-20
-#define RollD100() PRandRange(1, 101) // 1-100
+#define ShuffleArray(%0) RandShuffle(%0, sizeof(%0))
 
 /**
- * Roll dice with cryptographically secure RNG
+ * Shuffle array range
+ * @example ShuffleArrayRange(players, 3, 7);
  */
-#define SecureRollD4()  CSPRandRange(1, 5)   // 1-4
-#define SecureRollD6()  CSPRandRange(1, 7)   // 1-6
-#define SecureRollD8()  CSPRandRange(1, 9)   // 1-8
-#define SecureRollD10() CSPRandRange(1, 11)  // 1-10
-#define SecureRollD12() CSPRandRange(1, 13)  // 1-12
-#define SecureRollD20() CSPRandRange(1, 21)  // 1-20
-#define SecureRollD100() CSPRandRange(1, 101) // 1-100
+#define ShuffleArrayRange(%0,%1,%2) RandShuffleRange(%0, %1, %2)
 
 /**
- * Pick random item from comma-separated list (for 2 items)
- * @example new color = RandomPick(0xFF0000, 0x00FF00); // 50% each
+ * Standard D&D dice macros
  */
-#define RandomPick(%0,%1) (PRandom(2) == 0 ? (%0) : (%1))
-
-/**
- * Shuffle array with optional range
- * @example 
- *   ShuffleArray(players); // Shuffle entire array
- *   ShuffleArrayRange(players, 3, 7); // Shuffle only indices 3-6
- */
-#define ShuffleArray(%0) PRandShuffle(%0, sizeof(%0))
-#define ShuffleArrayRange(%0,%1,%2) PRandShuffleRange(%0, %1, %2)
-
-/**
- * Create weighted chance table
- * @example
- *   new item = WeightedRandom(
- *       {30, 0},   // 30% chance for item 0
- *       {50, 1},   // 50% chance for item 1
- *       {20, 2}    // 20% chance for item 2
- *   );
- */
-stock WeightedRandom(...) {
-    new count = numargs();
-    new weights[128], items[128];
-    new total = 0;
-    
-    for(new i = 0; i < count; i += 2) {
-        weights[i/2] = getarg(i);
-        items[i/2] = getarg(i + 1);
-        total += weights[i/2];
-    }
-    
-    new rand = PRandom(total);
-    new sum = 0;
-    
-    for(new i = 0; i < count/2; i++) {
-        sum += weights[i];
-        if(rand < sum) return items[i];
-    }
-    
-    return items[count/2 - 1];
-}
-
-/**
- * Generate random string with specified characters
- * @param dest[] Destination string
- * @param len Length of string to generate
- * @param charset[] Character set to use (default: alphanumeric)
- * @return Generated string
- */
-stock RandomString(dest[], len = sizeof dest, const charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789") {
-    new charset_len = strlen(charset);
-    for(new i = 0; i < len; i++) {
-        dest[i] = charset[PRandom(charset_len)];
-    }
-    dest[len] = EOS;
-    return 1;
-}
-
-/**
- * Generate secure random string (cryptographically secure)
- */
-stock SecureRandomString(dest[], len = sizeof dest, const charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789") {
-    new charset_len = strlen(charset);
-    for(new i = 0; i < len; i++) {
-        dest[i] = charset[CSPRandom(charset_len)];
-    }
-    dest[len] = EOS;
-    return 1;
-}
-
-/**
- * Get random color (RGB format)
- * @return Random color (0xRRGGBB)
- */
-stock RandomColor() {
-    return (PRandom(256) << 16) | (PRandom(256) << 8) | PRandom(256);
-}
-
-/**
- * Get secure random color
- */
-stock SecureRandomColor() {
-    return (CSPRandom(256) << 16) | (CSPRandom(256) << 8) | CSPRandom(256);
-}
+#define RollD4()  RandRange(1, 4)
+#define RollD6()  RandRange(1, 6)
+#define RollD8()  RandRange(1, 8)
+#define RollD10() RandRange(1, 10)
+#define RollD12() RandRange(1, 12)
+#define RollD20() RandRange(1, 20)
+#define RollD100() RandRange(1, 100)
