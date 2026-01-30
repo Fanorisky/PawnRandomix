@@ -161,18 +161,31 @@ new dmg = RandDice(6, 2);  // Roll 2d6
 new crit = RandDice(20, 1); // Roll 1d20
 ```
 
-## Helper Macros (Stock)
-
+## Helper Stocks & Macros
 ```pawn
-Random(max)                    // 0 to max-1
-RandFloat(max)                 // 0.0 to max
-RandomColor()                  // 0xRRGGBB
-RandExcept(min, max, except)   // Range with exclusion
-RandomChance(25)               // 25% boolean
-CoinFlip()                     // 50/50
-RollD6() / RollD20() / RollD100()  // Standard dice
-ShuffleArray(array)            // Macro for RandShuffle
-RandomElement(array, size)     // Random index access
+// Basic utilities
+Random(max)                           // 0 to max-1
+RandFloat(Float:max)                  // 0.0 to max
+RandExcept(min, max, except)          // Range with exclusion
+
+// String generation  
+RandString(dest[], len, charset[])    // Custom charset (default: alphanumeric)
+RandHexString(dest[], len)            // Hex chars only (0-9, A-F)
+
+// Colors & visual
+RandomColor()                         // Returns 0xRRGGBB
+
+// Probability helpers
+RandomChance(percent)                 // 0-100 percentage chance
+CoinFlip()                            // 50/50 boolean
+
+// Dice macros
+RollD6() / RollD20() / RollD100()     // Standard D&D dice
+
+// Array shortcuts
+ShuffleArray(array)                   // Macro for RandShuffle
+RandomElement(array, size)            // Random index accessor
+RandPickFloat(Float:array[], size)    // Pick from float array
 ```
 
 ## Technical Details
