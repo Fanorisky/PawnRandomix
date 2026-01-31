@@ -101,9 +101,13 @@ jobs:
           cmake --build build-omp --config Release --parallel
         shell: powershell
         
-      - name: Check file size
+      - name: Check file size and compare with SA-MP
         run: |
-          Get-ChildItem -Path "build-omp\Release\Randomix.dll" | Select-Object Name, Length
+          Write-Host "=== open.mp build ==="
+          Get-ChildItem -Path "build-omp\Release\Randomix.dll" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
+          
+          Write-Host "`nAll files in open.mp Release folder:"
+          Get-ChildItem -Path "build-omp\Release" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
         shell: powershell
     
       - name: Upload open.mp artifact
