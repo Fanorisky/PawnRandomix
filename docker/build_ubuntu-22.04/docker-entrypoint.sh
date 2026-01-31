@@ -25,7 +25,8 @@ cmake \
     -DCMAKE_C_FLAGS=-m32 \
     -DCMAKE_CXX_FLAGS=-m32 \
     -DCMAKE_BUILD_TYPE="$config" \
-    -DBUILD_SAMP_PLUGIN="$build_samp"
+    -DBUILD_SAMP_PLUGIN="$build_samp" \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
 # Build
 cmake \
