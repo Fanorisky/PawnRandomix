@@ -361,9 +361,7 @@ public:
     
     void onFree(IComponent* component) override {
         if (component == pawn_) {
-            if (pawn_) {
-                pawn_->getEventDispatcher().removeEventHandler(this);
-            }
+            pawn_->getEventDispatcher().removeEventHandler(this);
             pawn_ = nullptr;
             setAmxFunctions();
             setAmxLookups();

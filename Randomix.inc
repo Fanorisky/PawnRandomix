@@ -237,14 +237,15 @@ native bool:RandPointInTriangle(Float:x1, Float:y1, Float:x2, Float:y2, Float:x3
  * @param centerX Center X
  * @param centerY Center Y
  * @param radius Radius (> 0)
- * @param startAngle Start angle in radians
- * @param endAngle End angle in radians (can be > 2PI for multiple rotations)
+ * @param startAngle Start angle in radians (will be normalized)
+ * @param endAngle End angle in radians (will be normalized)
  * @param x Output X (by reference)
  * @param y Output Y (by reference)
  * @return true on success
  * @note Angles are in radians. 0 = right, PI/2 = down, PI = left, 3PI/2 = up
  * @example RandPointInArc(0.0, 0.0, 100.0, 0.0, 1.5708, x, y); // Quarter circle (right to down)
- * @note If endAngle < startAngle, it wraps around (e.g., 350 to 10)
+ * @note If endAngle < startAngle, it wraps around (e.g., 350 to 10 degrees)
+ * @note Angles are normalized to [0, 2*PI) range
  * @since 2.0.1
  */
 native bool:RandPointInArc(Float:centerX, Float:centerY, Float:radius, Float:startAngle, Float:endAngle, &Float:x, &Float:y);
@@ -351,7 +352,7 @@ stock Float:RandAngle() {
  * Random sign (+1 or -1)
  * @return 1 or -1 with 50/50 chance
  */
-stock RandomSign() {
+stock RandSign() {
     return RandBool(0.5) ? 1 : -1;
 }
 
@@ -369,7 +370,7 @@ stock RandColor() {
  * @param alpha Alpha value (0-255), default 255 (opaque)
  * @return Random color integer (0xRRGGBBAA)
  */
-stock RandomColorAlpha(alpha = 255) {
+stock RandColorAlpha(alpha = 255) {
     return (Random(256) << 16) | (Random(256) << 8) | Random(256) | (alpha << 24);
 }
 

@@ -158,7 +158,7 @@ new damage = RandGaussian(50.0, 10.0); // Mean 50, SD 10
 
 // D&D style dice
 new dmg = RandDice(6, 2);   // Roll 2d6
-new crit = RollD20();       // Roll 1d20 (macro)
+new crit = RandD20();       // Roll 1d20 (macro)
 ```
 
 ## Helper Stocks & Macros
@@ -171,7 +171,7 @@ RandInt(min, max)                     // Integer in range [min, max]
 RandExc(min, max, except)             // Range with exclusion
 RandExcMany(min, max, ...)            // Range with multiple exclusions
 RandAngle()                           // Random angle [0, 2*PI) in radians
-RandomSign()                          // Returns +1 or -1
+RandSign()                            // Returns +1 or -1
 ```
 
 ### String Generation

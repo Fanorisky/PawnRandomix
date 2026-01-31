@@ -38,7 +38,9 @@ PLUGIN_EXPORT bool PLUGIN_CALL Load(void** ppData) {
 }
 
 PLUGIN_EXPORT void PLUGIN_CALL Unload() {
-    logprintf("Randomix Plugin Unloaded");
+    logprintf("");
+    logprintf("  Randomix v2.0.1 Unloaded");
+    logprintf("");
 }
 
 static inline cell* GetAddr(AMX* amx, cell address) {
