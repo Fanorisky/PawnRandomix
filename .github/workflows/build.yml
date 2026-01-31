@@ -29,7 +29,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t Randomix/build:ubuntu-18.04 docker/build_ubuntu-18.04/
+          docker build -t randomix/build:ubuntu-22.04 docker/build_ubuntu-22.04/
 
       - name: Run build in Docker container
         env:
@@ -42,7 +42,7 @@ jobs:
             -v "${{ github.workspace }}/docker/build:/code/build" \
             -e CONFIG=${CONFIG} \
             -e BUILD_SERVER=${BUILD_SERVER} \
-            Randomix/build:ubuntu-18.04
+            randomix/build:ubuntu-22.04
 
       - name: Upload Linux .so artifacts
         uses: actions/upload-artifact@v4

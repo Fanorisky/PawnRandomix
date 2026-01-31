@@ -7,7 +7,7 @@ Powered by **ChaCha20** stream cipher - the same algorithm used in TLS 1.3 and W
 
 - **Cryptographic Security**: ChaCha20 CSPRNG (not predictable like standard `random()`)
 - **Game Ready**: Dice, shuffling, weighted picks, Gaussian distributions
-- **Geometric Utilities**: Random points in circles, spheres, polygons, rings
+- **Geometric Utilities**: Random points in circles, spheres, polygons, rings, arcs
 - **Token Generation**: UUID v4, hex patterns, random strings
 
 ## Installation
@@ -83,6 +83,7 @@ RandPointInRect(Float:minX, Float:minY, Float:maxX, Float:maxY, &Float:x, &Float
 RandPointInRing(Float:cx, Float:cy, Float:innerR, Float:outerR, &Float:x, &Float:y)
 RandPointInEllipse(Float:cx, Float:cy, Float:rx, Float:ry, &Float:x, &Float:y)
 RandPointInTriangle(Float:x1, Float:y1, Float:x2, Float:y2, Float:x3, Float:y3, &Float:x, &Float:y)
+RandPointInArc(Float:cx, Float:cy, Float:r, Float:startA, Float:endA, &Float:x, &Float:y)
 RandPointInPolygon(const Float:verts[], count, &Float:x, &Float:y)
 ```
 
@@ -116,13 +117,8 @@ public OnPlayerConnect(playerid)
 GiveRandomLoot(playerid)
 {
     new lootTable[] = {301, 302, 303, 304}; // Item IDs
-    new item = RandPick(lootTable, sizeof(lootTable));
-    
-    // Or with weighted rarity
-    new weights[] = {60, 25, 10, 5}; // Common to Rare
-    new idx = RandWeighted(weights, sizeof(weights));
-    item = lootTable[idx];
-    
+    new weights[] = {60, 25, 10, 5};        // Common to Rare
+    new item = RandLoot(lootTable, weights, sizeof(lootTable));
     GivePlayerItem(playerid, item);
 }
 ```
@@ -149,6 +145,10 @@ CreateEnemy(x, y, 0.0);
 // Random point in triangle zone
 new Float:verts[] = {0.0, 0.0, 100.0, 0.0, 50.0, 100.0};
 RandPointInPolygon(verts, 3, x, y);
+
+// Spawn in arc (sector) in front of player
+new Float:pa; GetPlayerFacingAngle(playerid, pa);
+RandPointInArc(px, py, 100.0, pa - 0.785, pa + 0.785, x, y);
 ```
 
 ### Statistical Rolls
@@ -157,41 +157,80 @@ RandPointInPolygon(verts, 3, x, y);
 new damage = RandGaussian(50.0, 10.0); // Mean 50, SD 10
 
 // D&D style dice
-new dmg = RandDice(6, 2);  // Roll 2d6
-new crit = RandDice(20, 1); // Roll 1d20
+new dmg = RandDice(6, 2);   // Roll 2d6
+new crit = RollD20();       // Roll 1d20 (macro)
 ```
 
 ## Helper Stocks & Macros
+
+### Basic Utilities
 ```pawn
-// Basic utilities
 Random(max)                           // 0 to max-1
 RandFloat(Float:max)                  // 0.0 to max
-RandExcept(min, max, except)          // Range with exclusion
+RandInt(min, max)                     // Integer in range [min, max]
+RandExc(min, max, except)             // Range with exclusion
+RandExcMany(min, max, ...)            // Range with multiple exclusions
+RandAngle()                           // Random angle [0, 2*PI) in radians
+RandomSign()                          // Returns +1 or -1
+```
 
-// String generation  
-RandString(dest[], len, charset[])    // Custom charset (default: alphanumeric)
-RandHexString(dest[], len)            // Hex chars only (0-9, A-F)
+### String Generation
+```pawn
+RandStr(dest[], len, charset[])       // Custom charset (default: alphanumeric)
+RandHex(dest[], len)                  // Hex chars only (0-9, A-F)
+```
 
-// Colors & visual
-RandomColor()                         // Returns 0xRRGGBB
+### Colors
+```pawn
+RandColor()                           // Returns 0xRRGGBB
+RandColorAlpha(alpha = 255)           // Returns 0xRRGGBBAA
+```
 
-// Probability helpers
-RandomChance(percent)                 // 0-100 percentage chance
+### Probability Helpers
+```pawn
+RandChance(percent)                   // 0-100 percentage chance
 CoinFlip()                            // 50/50 boolean
+```
 
-// Dice macros
-RollD6() / RollD20() / RollD100()     // Standard D&D dice
-
-// Array shortcuts
-ShuffleArray(array)                   // Macro for RandShuffle
-RandomElement(array, size)            // Random index accessor
+### Loot & Picking
+```pawn
+RandLoot(itemIds[], weights[], count) // Weighted item selection
 RandPickFloat(Float:array[], size)    // Pick from float array
+RandPointInCircleAroundPlayer(pid, r, &x, &y) // Spawn around player
+RandVecInRange(min, max, &x, &y, &z)  // Random 3D vector
+```
+
+### Dice Macros
+```pawn
+RandD2() / RandD3() / RandD4()        // 2, 3, 4-sided dice
+RandD6() / RandD8() / RandD10()       // 6, 8, 10-sided dice
+RandD12() / RandD20() / RandD30()     // 12, 20, 30-sided dice
+RandD100()                            // Percentile dice
+```
+
+### Array Shortcuts
+```pawn
+RandShuf(array)                       // Macro for RandShuffle
+RandShufRange(array, start, end)      // Macro for RandShuffleRange
+RandElem(array, size)                 // Random index accessor
+RandEither(option1, option2)          // Pick one of two options
+```
+
+### Mathematical Constants
+```pawn
+const Float:RANDIX_PI = 3.14159265359;
+const Float:RANDIX_TWO_PI = 6.28318530718;
+const Float:RANDIX_HALF_PI = 1.57079632679;
+
+Deg2Rad(degrees)                      // Convert degrees to radians
+Rad2Deg(radians)                      // Convert radians to degrees
 ```
 
 ## Technical Details
 
 - **Algorithm**: ChaCha20 (20 rounds)
 - **Security**: 256-bit key, 64-bit nonce
+- **Auto-reseed**: After 1GB of generated data
 
 ## Credits
 

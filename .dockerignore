@@ -1,0 +1,48 @@
+# Build directories
+build/
+build_test/
+cmake-build-*/
+out/
+
+# Docker build artifacts (avoid recursive)
+docker/build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitmodules
+
+# GitHub
+.github/
+
+# Documentation
+*.md
+LICENSE*
+
+# CI files that aren't needed in Docker
+.clang-format
+.gitattributes
+
+# Large dependency directories that should be mounted separately
+# or fetched in the build process
+deps/omp-sdk/build/
+deps/pawn/compiler/build/
+
+# Artifacts
+*.dll
+*.so
+*.exe
+*.zip
+*.tar.gz
+*.tar.xz

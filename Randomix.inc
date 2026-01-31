@@ -1,18 +1,14 @@
-// ==============================
 // Randomix Include File
-// Version: 2.0.0 (CSPRNG Only)
+// Version: 2.0.1 (CSPRNG Only)
 // Author: Fanorisky
 // Algorithm: ChaCha20 (Cryptographic)
-// ==============================
 
 #if defined _randomix_included
     #endinput
 #endif
 #define _randomix_included
 
-// ==============================
-// 1. CORE RANDOM FUNCTIONS (ChaCha20 CSPRNG)
-// ==============================
+// Core random functions (ChaCha20 CSPRNG)
 
 /**
  * Seed the RNG generator
@@ -102,9 +98,7 @@ native RandGaussian(Float:mean, Float:stddev);
  */
 native RandDice(sides, count = 1);
 
-// ==============================
-// 2. UTILITY FUNCTIONS (NEW)
-// ==============================
+// Utility functions
 
 /**
  * Pick random element from array (without modifying array)
@@ -139,13 +133,11 @@ native RandPick(const array[], count = sizeof array);
  *   RandFormat(code, "v\\1.9A");            // "v1.9k" (literal \1)
  *   RandFormat(code, "KEY_!9A");            // "KEY_@4p"
  * @note Pattern length must be < maxLen to avoid truncation
- * @note Uses CSPRNG untuk setiap karakter generated
+ * @note Uses CSPRNG for each generated character
  */
 native bool:RandFormat(dest[], const pattern[], maxLen = sizeof dest);
 
-// ==============================
-// 3. CRYPTOGRAPHIC FUNCTIONS
-// ==============================
+// Cryptographic functions
 
 /**
  * Fill array with cryptographically secure random bytes
@@ -166,9 +158,7 @@ native bool:RandBytes(dest[], length);
  */
 native bool:RandUUID(uuid[37]);
 
-// ==============================
-// 4. 2D GEOMETRIC DISTRIBUTIONS
-// ==============================
+// 2D geometric distributions
 
 /**
  * Generate random point inside circle (uniform distribution)
@@ -242,9 +232,24 @@ native bool:RandPointInEllipse(Float:centerX, Float:centerY, Float:radiusX, Floa
  */
 native bool:RandPointInTriangle(Float:x1, Float:y1, Float:x2, Float:y2, Float:x3, Float:y3, &Float:x, &Float:y);
 
-// ==============================
-// 5. 3D GEOMETRIC DISTRIBUTIONS
-// ==============================
+/**
+ * Generate random point in arc/circular sector
+ * @param centerX Center X
+ * @param centerY Center Y
+ * @param radius Radius (> 0)
+ * @param startAngle Start angle in radians
+ * @param endAngle End angle in radians (can be > 2PI for multiple rotations)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ * @note Angles are in radians. 0 = right, PI/2 = down, PI = left, 3PI/2 = up
+ * @example RandPointInArc(0.0, 0.0, 100.0, 0.0, 1.5708, x, y); // Quarter circle (right to down)
+ * @note If endAngle < startAngle, it wraps around (e.g., 350 to 10)
+ * @since 2.0.1
+ */
+native bool:RandPointInArc(Float:centerX, Float:centerY, Float:radius, Float:startAngle, Float:endAngle, &Float:x, &Float:y);
+
+// 3D geometric distributions
 
 /**
  * Generate random point inside sphere (uniform volume)
@@ -282,9 +287,7 @@ native bool:RandPointOnSphere(Float:centerX, Float:centerY, Float:centerZ, Float
  */
 native bool:RandPointInBox(Float:minX, Float:minY, Float:minZ, Float:maxX, Float:maxY, Float:maxZ, &Float:x, &Float:y, &Float:z);
 
-// ==============================
-// 6. ADVANCED GEOMETRY
-// ==============================
+// Advanced geometry
 
 /**
  * Generate random point in convex polygon (2D)
@@ -298,17 +301,19 @@ native bool:RandPointInBox(Float:minX, Float:minY, Float:minZ, Float:maxX, Float
  */
 native bool:RandPointInPolygon(const Float:vertices[], vertexCount, &Float:x, &Float:y);
 
-// ==============================
-// 7. CONVENIENCE STOCK FUNCTIONS
-// ==============================
+// Convenience stock functions
 
 /**
- * Random integer [0, max-1]
+ * Random integer [0, max]
  * @param max Maximum value (exclusive)
- * @return Random integer [0, max-1]
+ * @return Random integer [0, max]
  */
-stock Random(max) { 
-    return RandRange(0, max - 1); 
+#if defined Random
+    #undef Random
+#endif
+stock Random(max) 
+{ 
+    return RandRange(0, max); 
 }
 
 /**
@@ -316,8 +321,56 @@ stock Random(max) {
  * @param max Maximum value (exclusive)
  * @return Random float [0.0, max)
  */
-stock Float:RandFloat(Float:max) { 
+#if defined RandomFloat
+    #undef RandomFloat
+#endif
+stock Float:RandomFloat(Float:max) { 
     return RandFloatRange(0.0, max); 
+}
+
+/**
+ * Random integer in range [min, max] (alias for RandRange)
+ * @param min Minimum value (inclusive)
+ * @param max Maximum value (inclusive)
+ * @return Random integer [min, max]
+ */
+stock RandInt(min, max) {
+    return RandRange(min, max);
+}
+
+/**
+ * Random angle in radians [0.0, 2*PI)
+ * @return Random angle in radians
+ * @note 0 = right, PI/2 = down, PI = left, 3PI/2 = up
+ */
+stock Float:RandAngle() {
+    return RandFloatRange(0.0, 6.28318530718);
+}
+
+/**
+ * Random sign (+1 or -1)
+ * @return 1 or -1 with 50/50 chance
+ */
+stock RandomSign() {
+    return RandBool(0.5) ? 1 : -1;
+}
+
+/**
+ * Random RGB color (24-bit)
+ * @return Random color integer (0xRRGGBB)
+ * @example SetPlayerColor(playerid, RandColor());
+ */
+stock RandColor() {
+    return (Random(256) << 16) | (Random(256) << 8) | Random(256);
+}
+
+/**
+ * Random RGBA color (32-bit with alpha)
+ * @param alpha Alpha value (0-255), default 255 (opaque)
+ * @return Random color integer (0xRRGGBBAA)
+ */
+stock RandomColorAlpha(alpha = 255) {
+    return (Random(256) << 16) | (Random(256) << 8) | Random(256) | (alpha << 24);
 }
 
 /**
@@ -328,7 +381,7 @@ stock Float:RandFloat(Float:max) {
  * @return Random integer [min, max] except 'except'
  * @note Efficient implementation without retry loop
  */
-stock RandExcept(min, max, except) {
+stock RandExc(min, max, except) {
     if (min > max) {
         new temp = min;
         min = max;
@@ -342,12 +395,52 @@ stock RandExcept(min, max, except) {
 }
 
 /**
- * Random RGB color (24-bit)
- * @return Random color integer (0xRRGGBB)
- * @example SetPlayerColor(playerid, RandomColor());
+ * Random integer in range with multiple excluded values
+ * @param min Minimum value (inclusive)
+ * @param max Maximum value (inclusive)
+ * @param ... Variable number of values to exclude
+ * @return Random integer [min, max] except excluded values
+ * @note If all values in range are excluded, returns max
+ * @example RandExcMany(1, 10, 3, 5, 7) // Returns 1-10 except 3, 5, 7
  */
-stock RandomColor() {
-    return (Random(256) << 16) | (Random(256) << 8) | Random(256);
+stock RandExcMany(min, max, ...) {
+    if (min > max) {
+        new temp = min;
+        min = max;
+        max = temp;
+    }
+    
+    new numExcluded = numargs() - 2;
+    if (numExcluded == 0) {
+        return RandRange(min, max);
+    }
+    
+    for (new i = min, j; i <= max; ++i) {
+        j = 0;
+        while (j < numExcluded) {
+            if (getarg(j + 2) == i) {
+                break;
+            }
+            ++j;
+        }
+        if (j == numExcluded) {
+            for ( ; ; ) {
+                new candidate = RandRange(min, max);
+                j = 0;
+                while (j < numExcluded) {
+                    if (getarg(j + 2) == candidate) {
+                        break;
+                    }
+                    ++j;
+                }
+                if (j == numExcluded) {
+                    return candidate;
+                }
+            }
+        }
+    }
+    
+    return max;
 }
 
 /**
@@ -355,9 +448,9 @@ stock RandomColor() {
  * @param dest[] Destination string
  * @param len Length of hex string
  * @return 1 on success, 0 if len <= 0
- * @example new hex[9]; RandHexString(hex, 8); // "A3F5D2B1"
+ * @example new hex[9]; RandHex(hex, 8); // "A3F5D2B1"
  */
-stock RandHexString(dest[], len) {
+stock RandHex(dest[], len) {
     if (len <= 0) return 0;
     static const hex[] = "0123456789ABCDEF";
     for (new i = 0; i < len; i++) {
@@ -375,7 +468,7 @@ stock RandHexString(dest[], len) {
  * @return 1 on success, 0 if charset empty
  * @note Destination must be at least len+1 cells
  */
-stock RandString(dest[], len, const charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789") {
+stock RandStr(dest[], len, const charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789") {
     new charset_len = strlen(charset);
     if (charset_len == 0) return 0;
     for (new i = 0; i < len; i++) {
@@ -397,15 +490,57 @@ stock Float:RandPickFloat(const Float:array[], count = sizeof array) {
     return array[idx];
 }
 
-// ==============================
-// 8. USEFUL MACROS
-// ==============================
+/**
+ * Generate random 3D vector within range
+ * @param min Minimum value (inclusive)
+ * @param max Maximum value (exclusive)
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @param z Output Z (by reference)
+ * @return 1 on success
+ */
+stock RandVecInRange(Float:min, Float:max, &Float:x, &Float:y, &Float:z) {
+    x = RandFloatRange(min, max);
+    y = RandFloatRange(min, max);
+    z = RandFloatRange(min, max);
+    return 1;
+}
+
+/**
+ * Pick random item from loot table using weights
+ * @param itemIds[] Array of item IDs
+ * @param weights[] Array of weights (same size as itemIds)
+ * @param count Number of items
+ * @return Selected item ID
+ * @example new items[] = {301, 302, 303}; new weights[] = {60, 30, 10}; new item = RandLoot(items, weights, 3);
+ */
+stock RandLoot(const itemIds[], const weights[], count = sizeof itemIds) {
+    if (count == 0 || count != sizeof weights) return 0;
+    new idx = RandWeighted(weights, count);
+    return itemIds[idx];
+}
+
+/**
+ * Generate random point in circle around player
+ * @param playerid Player ID
+ * @param radius Circle radius
+ * @param x Output X (by reference)
+ * @param y Output Y (by reference)
+ * @return true on success
+ */
+stock RandPointInCircleAroundPlayer(playerid, Float:radius, &Float:x, &Float:y) {
+    new Float:px, Float:py, Float:pz;
+    if (!GetPlayerPos(playerid, px, py, pz)) return false;
+    return RandPointInCircle(px, py, radius, x, y);
+}
+
+// Useful macros
 
 /**
  * Random chance X%
- * @example if(RandomChance(25)) // 25% chance
+ * @example if(RandChance(25)) // 25% chance
  */
-#define RandomChance(%0) RandBool(Float:(%0) / 100.0)
+#define RandChance(%0) RandBool(Float:(%0) / 100.0)
 
 /**
  * Flip a coin (50/50)
@@ -414,35 +549,48 @@ stock Float:RandPickFloat(const Float:array[], count = sizeof array) {
 
 /**
  * Random element from array
- * @example new item = RandomElement(items, sizeof(items));
+ * @example new item = RandElem(items, sizeof(items));
  */
-#define RandomElement(%0,%1) %0[Random(%1)]
+#define RandElem(%0,%1) %0[Random(%1)]
 
 /**
  * Pick random from two options
- * @example new color = RandomPick(0xFF0000, 0x00FF00);
+ * @example new color = RandEither(0xFF0000, 0x00FF00);
  */
-#define RandomPick(%0,%1) (RandBool(0.5) ? (%0) : (%1))
+#define RandEither(%0,%1) (RandBool(0.5) ? (%0) : (%1))
 
 /**
  * Shuffle entire array
- * @example ShuffleArray(players);
+ * @example RandShuf(players);
  */
-#define ShuffleArray(%0) RandShuffle(%0, sizeof(%0))
+#define RandShuf(%0) RandShuffle(%0, sizeof(%0))
 
 /**
  * Shuffle array range
- * @example ShuffleArrayRange(players, 3, 7);
+ * @example RandShufRange(players, 3, 7);
  */
-#define ShuffleArrayRange(%0,%1,%2) RandShuffleRange(%0, %1, %2)
+#define RandShufRange(%0,%1,%2) RandShuffleRange(%0, %1, %2)
 
-/**
- * Standard D&D dice macros
- */
-#define RollD4()  RandRange(1, 4)
-#define RollD6()  RandRange(1, 6)
-#define RollD8()  RandRange(1, 8)
-#define RollD10() RandRange(1, 10)
-#define RollD12() RandRange(1, 12)
-#define RollD20() RandRange(1, 20)
-#define RollD100() RandRange(1, 100)
+// Standard D&D dice macros
+
+#define RandD2()   RandRange(1, 2)
+#define RandD3()   RandRange(1, 3)
+#define RandD4()   RandRange(1, 4)
+#define RandD6()   RandRange(1, 6)
+#define RandD8()   RandRange(1, 8)
+#define RandD10()  RandRange(1, 10)
+#define RandD12()  RandRange(1, 12)
+#define RandD20()  RandRange(1, 20)
+#define RandD30()  RandRange(1, 30)
+#define RandD100() RandRange(1, 100)
+
+// Mathematical constants
+
+const Float:RANDIX_PI = 3.14159265359;
+const Float:RANDIX_TWO_PI = 6.28318530718;
+const Float:RANDIX_HALF_PI = 1.57079632679;
+
+// Angle conversion macros
+
+#define Deg2Rad(%0) ((%0) * RANDIX_PI / 180.0)
+#define Rad2Deg(%0) ((%0) * 180.0 / RANDIX_PI)

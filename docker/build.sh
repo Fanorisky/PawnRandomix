@@ -1,33 +1,38 @@
 #!/bin/bash
+set -e
 
-# Available configs: Debug, [RelWithDebInfo], Release
-[[ -z "$CONFIG" ]] \
-&& config=RelWithDebInfo \
-|| config="$CONFIG"
-# Available options: [true], false
-[[ -z "$BUILD_SERVER" ]] \
-&& build_server=1 \
-|| build_server="$BUILD_SERVER"
+# Build configuration
+config="${CONFIG:-Release}"
+build_samp="${BUILD_SAMP_PLUGIN:-0}"
 
+# Docker image settings
+image_name="randomix/build"
+ubuntu_version="22.04"
+image_tag="${image_name}:ubuntu-${ubuntu_version}"
+
+echo "Building Docker image: $image_tag"
 docker build \
-    -t omp-easing-functions/build:ubuntu-18.04 \
-    build_ubuntu-18.04/ \
+    -t "$image_tag" \
+    "build_ubuntu-${ubuntu_version}/" \
 || exit 1
 
+# Prepare build directories
 folders=('build')
 for folder in "${folders[@]}"; do
     if [[ ! -d "./${folder}" ]]; then
-        mkdir ${folder} &&
-        chown 1000:1000 ${folder} || exit 1
+        mkdir -p "${folder}" &&
+        chown 1000:1000 "${folder}" || exit 1
     fi
 done
 
+# Run build in container
+echo "Starting build..."
 docker run \
     --rm \
     -t \
     -w /code \
-    -v $PWD/..:/code \
-    -v $PWD/build:/code/build \
-    -e CONFIG=${config} \
-    -e BUILD_SERVER=${build_server} \
-    omp-easing-functions/build:ubuntu-18.04
+    -v "$PWD/..:/code" \
+    -v "$PWD/build:/code/build" \
+    -e CONFIG="${config}" \
+    -e BUILD_SAMP_PLUGIN="${build_samp}" \
+    "$image_tag"

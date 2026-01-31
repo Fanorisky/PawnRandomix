@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 project(PawnRandomix
-    VERSION 1.3.0
+    VERSION 2.0.1
     LANGUAGES C CXX
 )
 
