@@ -18,13 +18,21 @@ option(BUILD_SAMP_PLUGIN "Build for SA-MP" OFF)
 # Compiler flags
 # =========================
 if(MSVC)
-    # Windows MSVC flags
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD /DNDEBUG")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /O2 /MD /DNDEBUG")
+    # Windows MSVC flags - use dynamic runtime
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
     
-    # Disable debug info in release
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /Oy-")
-    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /DEBUG:NONE /OPT:REF /OPT:ICF")
+    # Release optimizations
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Oi /GL /DNDEBUG /MD")
+    set(CMAKE_C_FLAGS_RELEASE "/O2 /Oi /GL /DNDEBUG /MD")
+    
+    # Linker optimizations
+    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "/LTCG /OPT:REF /OPT:ICF /RELEASE")
+    
+    # Remove debug info
+    string(REPLACE "/Zi" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+    string(REPLACE "/ZI" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+    string(REPLACE "/Zi" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+    string(REPLACE "/ZI" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
 else()
     # GCC/Clang flags
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -s -fvisibility=hidden")

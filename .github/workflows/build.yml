@@ -93,12 +93,17 @@ jobs:
     
       - name: Configure CMake for open.mp
         run: |
-          cmake -S . -B build-omp -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake -S . -B build-omp -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreadedDLL"
         shell: powershell
     
       - name: Build open.mp
         run: |
           cmake --build build-omp --config Release --parallel
+        shell: powershell
+        
+      - name: Check file size
+        run: |
+          Get-ChildItem -Path "build-omp\Release\Randomix.dll" | Select-Object Name, Length
         shell: powershell
     
       - name: Upload open.mp artifact
@@ -119,13 +124,28 @@ jobs:
     
       - name: Configure CMake for SA-MP
         run: |
-          cmake -S . -B build-samp -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SAMP_PLUGIN=ON
+          cmake -S . -B build-samp -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SAMP_PLUGIN=ON -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreadedDLL"
         shell: powershell
     
       - name: Build SA-MP
         run: |
           cmake --build build-samp --config Release --parallel
         shell: powershell
+        
+      - name: Check file size
+        run: |
+          Get-ChildItem -Path "build-samp\Release\Randomix.dll" | Select-Object Name, Length
+        shell: powershell
+        
+      - name: Strip debug symbols if present
+        run: |
+          # Try to strip using dumpbin or just verify it's release
+          dumpbin /headers build-samp\Release\Randomix.dll | findstr "debug"
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "WARNING: Debug symbols detected!"
+          }
+        shell: powershell
+        continue-on-error: true
     
       - name: Upload SA-MP artifact
         uses: actions/upload-artifact@v4
