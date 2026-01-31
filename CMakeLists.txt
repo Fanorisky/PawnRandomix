@@ -63,6 +63,12 @@ if(BUILD_SAMP_PLUGIN)
         # Force /MD for this target
         target_compile_options(${PROJECT_NAME} PRIVATE "/MD")
         set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+        
+        # Hide symbols to reduce size
+        target_compile_options(${PROJECT_NAME} PRIVATE "/Gy")
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+            LINK_FLAGS "/OPT:REF /OPT:ICF"
+        )
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -m32)
         target_link_options(${PROJECT_NAME} PRIVATE -m32)
