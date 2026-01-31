@@ -15,6 +15,23 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_SAMP_PLUGIN "Build for SA-MP" OFF)
 
 # =========================
+# Compiler flags
+# =========================
+if(MSVC)
+    # Windows MSVC flags
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD /DNDEBUG")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /O2 /MD /DNDEBUG")
+    
+    # Disable debug info in release
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /Oy-")
+    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /DEBUG:NONE /OPT:REF /OPT:ICF")
+else()
+    # GCC/Clang flags
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -s -fvisibility=hidden")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -s -fvisibility=hidden")
+endif()
+
+# =========================
 # SA-MP build
 # =========================
 if(BUILD_SAMP_PLUGIN)
@@ -43,6 +60,16 @@ if(BUILD_SAMP_PLUGIN)
         PAWN_CELL_SIZE=32
         BUILD_SAMP_PLUGIN=1
     )
+
+    if(NOT MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE
+            -m32
+            -fPIC
+        )
+        target_link_options(${PROJECT_NAME} PRIVATE
+            -m32
+        )
+    endif()
 
     set_target_properties(${PROJECT_NAME} PROPERTIES
         PREFIX ""
@@ -89,7 +116,16 @@ else()
         PAWN_CELL_SIZE=32
     )
 
-    # Pastikan nama target ini sesuai dengan yang ada di omp-sdk
+    if(NOT MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE
+            -m32
+            -fPIC
+        )
+        target_link_options(${PROJECT_NAME} PRIVATE
+            -m32
+        )
+    endif()
+
     target_link_libraries(${PROJECT_NAME} PRIVATE OMP-SDK)
 
     set_target_properties(${PROJECT_NAME} PROPERTIES
