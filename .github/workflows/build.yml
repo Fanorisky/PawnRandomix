@@ -145,19 +145,25 @@ jobs:
           # Check if MSVC runtime DLLs are linked
           $dllPath = "build-samp\Release\Randomix.dll"
           
-          # Use powershell to check PE headers for runtime imports
+          # Read file as bytes and convert to string
           $bytes = [System.IO.File]::ReadAllBytes($dllPath)
           $content = [System.Text.Encoding]::ASCII.GetString($bytes)
           
           Write-Host "Checking linked runtime libraries..."
-          if ($content -match "msvcp140.dll") {
-            Write-Host "✓ Dynamic C++ runtime (MSVCP140.dll) found"
-          } elseif ($content -match "MSVCR") {
-            Write-Host "✗ Static runtime detected (MSVCR reference)"
+          
+          # Use [regex]::Match instead of -match to avoid execution
+          $msvcp = [regex]::Match($content, "msvcp140\.dll")
+          $msvcr = [regex]::Match($content, "MSVCR")
+          $vcrt = [regex]::Match($content, "vcruntime140\.dll")
+          
+          if ($msvcp.Success) {
+            Write-Host "Dynamic C++ runtime (MSVCP140.dll) found"
+          } elseif ($msvcr.Success) {
+            Write-Host "Static runtime detected (MSVCR reference)"
           }
           
-          if ($content -match "vcruntime140.dll") {
-            Write-Host "✓ Dynamic C runtime (VCRUNTIME140.dll) found"
+          if ($vcrt.Success) {
+            Write-Host "Dynamic C runtime (VCRUNTIME140.dll) found"
           }
         shell: powershell
         continue-on-error: true
