@@ -9,39 +9,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# =========================
 # Build options
-# =========================
 option(BUILD_SAMP_PLUGIN "Build for SA-MP" OFF)
 
-# =========================
-# Compiler flags
-# =========================
-if(MSVC)
-    # Windows MSVC flags - use dynamic runtime
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
-    
-    # Release optimizations
-    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Oi /GL /DNDEBUG /MD")
-    set(CMAKE_C_FLAGS_RELEASE "/O2 /Oi /GL /DNDEBUG /MD")
-    
-    # Linker optimizations
-    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "/LTCG /OPT:REF /OPT:ICF /RELEASE")
-    
-    # Remove debug info
-    string(REPLACE "/Zi" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-    string(REPLACE "/ZI" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-    string(REPLACE "/Zi" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-    string(REPLACE "/ZI" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-else()
-    # GCC/Clang flags
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -s -fvisibility=hidden")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -s -fvisibility=hidden")
-endif()
-
-# =========================
 # SA-MP build
-# =========================
 if(BUILD_SAMP_PLUGIN)
     message(STATUS "Building PawnRandomix for SA-MP")
 
@@ -69,16 +40,6 @@ if(BUILD_SAMP_PLUGIN)
         BUILD_SAMP_PLUGIN=1
     )
 
-    if(NOT MSVC)
-        target_compile_options(${PROJECT_NAME} PRIVATE
-            -m32
-            -fPIC
-        )
-        target_link_options(${PROJECT_NAME} PRIVATE
-            -m32
-        )
-    endif()
-
     set_target_properties(${PROJECT_NAME} PROPERTIES
         PREFIX ""
         OUTPUT_NAME "Randomix"
@@ -92,9 +53,7 @@ if(BUILD_SAMP_PLUGIN)
         endif()
     endif()
 
-# =========================
 # open.mp build
-# =========================
 else()
     message(STATUS "Building PawnRandomix for open.mp")
 
@@ -123,16 +82,6 @@ else()
         HAVE_STDINT_H=1
         PAWN_CELL_SIZE=32
     )
-
-    if(NOT MSVC)
-        target_compile_options(${PROJECT_NAME} PRIVATE
-            -m32
-            -fPIC
-        )
-        target_link_options(${PROJECT_NAME} PRIVATE
-            -m32
-        )
-    endif()
 
     target_link_libraries(${PROJECT_NAME} PRIVATE OMP-SDK)
 
