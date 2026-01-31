@@ -1,11 +1,12 @@
 # Build directories
 build/
 build_test/
+build-*/
 cmake-build-*/
 out/
 
 # Docker build artifacts (avoid recursive)
-docker/build/
+docker/build*/
 
 # IDE
 .vscode/

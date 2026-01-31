@@ -31,8 +31,8 @@ docker run \
     --rm \
     -t \
     -w /code \
-    -v "$PWD/..:/code" \
-    -v "$PWD/build:/code/build" \
+    -v "$PWD:/code" \
+    -v "$PWD/docker/build:/code/build" \
     -e CONFIG="${config}" \
     -e BUILD_SAMP_PLUGIN="${build_samp}" \
     "$image_tag"
