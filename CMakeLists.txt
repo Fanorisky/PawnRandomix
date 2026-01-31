@@ -26,13 +26,15 @@ if(BUILD_SAMP_PLUGIN)
         ${SAMPSDK_DIR}/amxplugin.cpp
         ${SAMPSDK_DIR}/amxplugin2.cpp
         ${SAMPSDK_DIR}/amx/getch.c
-        main_samp.cpp
-        randomix.cpp
+        src/main_samp.cpp
+        src/randomix.cpp
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE
         ${SAMPSDK_DIR}
         ${SAMPSDK_DIR}/amx
+        src
+        ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
     target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -64,11 +66,12 @@ else()
     add_subdirectory(deps/omp-sdk)
 
     add_library(${PROJECT_NAME} SHARED
-        main.cpp
-        randomix.cpp
+        src/main.cpp
+        src/randomix.cpp
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE
+        src
         deps
         deps/pawn/source
         deps/pawn-natives
