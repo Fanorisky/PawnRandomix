@@ -132,37 +132,25 @@ jobs:
           cmake --build build-samp --config Release --parallel -- /p:CharacterSet=MultiByte /p:WholeProgramOptimization=true
         shell: powershell
         
-      - name: Check file size and properties
+      - name: Check file size and check for PDB
         run: |
           $dll = Get-ChildItem -Path "build-samp\Release\Randomix.dll"
-          Write-Host "File: $($dll.Name)"
-          Write-Host "Size: $($dll.Length) bytes ($([math]::Round($dll.Length/1KB,2)) KB)"
+          Write-Host "DLL File: $($dll.Name)"
+          Write-Host "DLL Size: $($dll.Length) bytes ($([math]::Round($dll.Length/1KB,2)) KB)"
           
-          # Check if debug symbols exist
-          $fileInfo = dumpbin /headers $dll.FullName | Out-String
-          if ($fileInfo -match "debug" -or $fileInfo -match "\.pdb") {
-            Write-Host "WARNING: Debug information detected!"
+          # Check if PDB file exists (debug symbols)
+          $pdbPath = "build-samp\Release\Randomix.pdb"
+          if (Test-Path $pdbPath) {
+            $pdb = Get-ChildItem $pdbPath
+            Write-Host "PDB File Found: $($pdb.Name) - $($pdb.Length) bytes"
+          } else {
+            Write-Host "No PDB file found (good for release)"
           }
           
-          # Try to strip using MSVC tools
-          Write-Host "Attempting to strip debug info..."
+          # List all files in Release folder
+          Write-Host "`nAll files in Release folder:"
+          Get-ChildItem -Path "build-samp\Release" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
         shell: powershell
-        
-      - name: Strip debug symbols
-        run: |
-          # Use MSVC link.exe to strip debug info
-          & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.*\bin\Hostx86\x86\link.exe" `
-            /EDIT /RELEASE "build-samp\Release\Randomix.dll" 2>$null || `
-          & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.*\bin\Hostx64\x86\link.exe" `
-            /EDIT /RELEASE "build-samp\Release\Randomix.dll" 2>$null
-          
-          # Alternative: copy file and check if size changed
-          Copy-Item "build-samp\Release\Randomix.dll" "build-samp\Release\Randomix_stripped.dll" -Force
-          
-          Write-Host "After strip attempt:"
-          Get-ChildItem -Path "build-samp\Release\Randomix*.dll" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
-        shell: powershell
-        continue-on-error: true
     
       - name: Upload SA-MP artifact
         uses: actions/upload-artifact@v4
