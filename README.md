@@ -31,7 +31,7 @@ Powered by **ChaCha20** stream cipher - the same algorithm used in TLS 1.3 and W
 
 ### Core Random Functions
 ```pawn
-RandRange(min, max)              // Integer in range [min, max]
+RandRange(min, max)              // Integer in range [min, max)
 RandFloatRange(Float:min, Float:max)  // Float in range [min, max)
 RandBool(Float:probability)      // Boolean with probability (0.0-1.0)
 RandBoolWeighted(trueW, falseW)  // Boolean with custom weights
@@ -107,8 +107,8 @@ public OnPlayerConnect(playerid)
     RandPointInCircle(0.0, 0.0, 100.0, x, y);
     SetPlayerPos(playerid, x, y, 5.0);
     
-    // Random weapon (1-5 slots)
-    GivePlayerWeapon(playerid, RandRange(22, 34), 100);
+    // Random weapon (22-33)
+    GivePlayerWeapon(playerid, RandRange(22, 35), 100);
 }
 ```
 
@@ -167,7 +167,7 @@ new crit = RandD20();       // Roll 1d20 (macro)
 ```pawn
 Random(max)                           // 0 to max-1
 RandFloat(Float:max)                  // 0.0 to max
-RandInt(min, max)                     // Integer in range [min, max]
+RandInt(min, max)                     // Integer in range [min, max) (alias for RandRange)
 RandExc(min, max, except)             // Range with exclusion
 RandExcMany(min, max, ...)            // Range with multiple exclusions
 RandAngle()                           // Random angle [0, 2*PI) in radians

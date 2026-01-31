@@ -56,7 +56,7 @@ inline int ImplRandRange(int min, int max) {
     
     uint32_t range = static_cast<uint32_t>(max - min);
     std::lock_guard<std::mutex> lock(Randomix::rng_mutex);
-    return min + static_cast<int>(Randomix::GetRNG().next_bounded(range + 1));
+    return min + static_cast<int>(Randomix::GetRNG().next_bounded(range));
 }
 
 inline float ImplRandFloatRange(float min, float max) {

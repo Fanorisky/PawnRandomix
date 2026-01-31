@@ -20,11 +20,11 @@
 native SeedRNG(seed);
 
 /**
- * Generate cryptographically secure random integer in range [min, max] (inclusive)
+ * Generate cryptographically secure random integer in range [min, max) (exclusive)
  * @param min Minimum value (inclusive)
- * @param max Maximum value (inclusive)
- * @return Random integer [min, max]
- * @example RandRange(1, 6) returns 1-6 (secure dice roll)
+ * @param max Maximum value (exclusive)
+ * @return Random integer [min, max)
+ * @example RandRange(1, 7) returns 1-6 (secure dice roll)
  * @note Uses rejection sampling for unbiased distribution
  */
 native RandRange(min, max);
