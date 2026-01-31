@@ -37,10 +37,22 @@ if(BUILD_SAMP_PLUGIN)
 
     set(SAMPSDK_DIR deps/samp-plugin-sdk)
 
+    # getch.c is POSIX-only (has #ifndef WIN32), exclude on Windows
+    if(WIN32)
+        set(SAMPSDK_SOURCES
+            ${SAMPSDK_DIR}/amxplugin.cpp
+            ${SAMPSDK_DIR}/amxplugin2.cpp
+        )
+    else()
+        set(SAMPSDK_SOURCES
+            ${SAMPSDK_DIR}/amxplugin.cpp
+            ${SAMPSDK_DIR}/amxplugin2.cpp
+            ${SAMPSDK_DIR}/amx/getch.c
+        )
+    endif()
+
     add_library(${PROJECT_NAME} SHARED
-        ${SAMPSDK_DIR}/amxplugin.cpp
-        ${SAMPSDK_DIR}/amxplugin2.cpp
-        ${SAMPSDK_DIR}/amx/getch.c
+        ${SAMPSDK_SOURCES}
         src/main_samp.cpp
         src/randomix.cpp
     )
