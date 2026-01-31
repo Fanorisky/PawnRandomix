@@ -36,9 +36,9 @@ public:
     ChaChaRNG& operator=(ChaChaRNG&&) = delete;
     
     void seed(uint64_t seed);
-    uint32_t next_uint32() noexcept;
-    float next_float() noexcept;
-    uint32_t next_bounded(uint32_t bound);
+    [[nodiscard]] uint32_t next_uint32() noexcept;
+    [[nodiscard]] float next_float() noexcept;
+    [[nodiscard]] uint32_t next_bounded(uint32_t bound);
     void next_bytes(uint8_t* buffer, size_t length);
 };
 

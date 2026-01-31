@@ -91,10 +91,12 @@ native RandGaussian(Float:mean, Float:stddev);
 
 /**
  * Roll dice (D&D style) with secure RNG
- * @param sides Number of sides (must be > 0)
- * @param count Number of dice (must be > 0)
- * @return Sum of all dice [count, count*sides]
- * @example RandDice(6, 2) rolls 2d6 (2-12)
+ * @param sides Number of sides per die (must be > 0)
+ * @param count Number of dice to roll (must be > 0)
+ * @return Sum of all dice rolls [count, count*sides]
+ * @example RandDice(6, 2) rolls 2d6, returns sum 2-12
+ * @note This returns the SUM of dice, not individual rolls
+ * @note For single die: RandDice(20, 1) returns 1-20
  */
 native RandDice(sides, count = 1);
 
@@ -511,12 +513,13 @@ stock RandVecInRange(Float:min, Float:max, &Float:x, &Float:y, &Float:z) {
  * Pick random item from loot table using weights
  * @param itemIds[] Array of item IDs
  * @param weights[] Array of weights (same size as itemIds)
- * @param count Number of items
+ * @param count Number of items (must match both array sizes)
  * @return Selected item ID
  * @example new items[] = {301, 302, 303}; new weights[] = {60, 30, 10}; new item = RandLoot(items, weights, 3);
+ * @note Ensure both arrays have the same size, otherwise behavior is undefined
  */
-stock RandLoot(const itemIds[], const weights[], count = sizeof itemIds) {
-    if (count == 0 || count != sizeof weights) return 0;
+stock RandLoot(const itemIds[], const weights[], count) {
+    if (count <= 0) return 0;
     new idx = RandWeighted(weights, count);
     return itemIds[idx];
 }

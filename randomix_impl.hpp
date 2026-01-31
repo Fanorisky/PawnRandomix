@@ -23,7 +23,7 @@ static constexpr int MAX_POLYGON_VERTICES = 128;  // Stack buffer size for polyg
 // Bounds checking utilities
 
 template<typename T>
-inline bool CheckArrayBounds(T* ptr, size_t minSize = 1) {
+inline bool CheckArrayBounds(T* ptr) {
     return ptr != nullptr;
 }
 
