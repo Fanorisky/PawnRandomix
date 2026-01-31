@@ -5,14 +5,23 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      build_target:
+        description: 'Build target'
+        required: true
+        default: 'samp'
+        type: choice
+        options:
+          - samp
+          - omp
 
 env:
   CONFIG: Release
 
 jobs:
 
-  linux-omp:
-    name: Build Linux .so - open.mp (32-bit)
+  linux-docker:
+    name: Build Linux .so (32-bit)
     runs-on: ubuntu-latest
 
     steps:
@@ -23,66 +32,53 @@ jobs:
 
       - name: Prepare build folder
         run: |
-          mkdir -p docker/build-omp
-          sudo chown 1000:1000 docker/build-omp
+          mkdir -p docker/build
+          sudo chown 1000:1000 docker/build
 
       - name: Build Docker image
         run: |
           docker build -t randomix/build:ubuntu-22.04 docker/build_ubuntu-22.04/
 
-      - name: Build open.mp component
+      - name: Determine build type
+        id: build_type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "BUILD_TYPE=${{ github.event.inputs.build_target }}" >> $GITHUB_OUTPUT
+          else
+            # Default to SA-MP for tag pushes
+            echo "BUILD_TYPE=samp" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build (SA-MP)
+        if: steps.build_type.outputs.BUILD_TYPE == 'samp'
         run: |
           docker run --rm -t \
             -w /code \
             -v "${{ github.workspace }}:/code" \
-            -v "${{ github.workspace }}/docker/build-omp:/code/build" \
-            -e CONFIG=${{ env.CONFIG }} \
-            -e BUILD_SAMP_PLUGIN=0 \
-            randomix/build:ubuntu-22.04
-
-      - name: Upload open.mp artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: randomix-omp-linux
-          path: docker/build-omp/Randomix.so
-
-  linux-samp:
-    name: Build Linux .so - SA-MP (32-bit)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository (with submodules)
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Prepare build folder
-        run: |
-          mkdir -p docker/build-samp
-          sudo chown 1000:1000 docker/build-samp
-
-      - name: Build Docker image
-        run: |
-          docker build -t randomix/build:ubuntu-22.04 docker/build_ubuntu-22.04/
-
-      - name: Build SA-MP plugin
-        run: |
-          docker run --rm -t \
-            -w /code \
-            -v "${{ github.workspace }}:/code" \
-            -v "${{ github.workspace }}/docker/build-samp:/code/build" \
+            -v "${{ github.workspace }}/docker/build:/code/build" \
             -e CONFIG=${{ env.CONFIG }} \
             -e BUILD_SAMP_PLUGIN=1 \
             randomix/build:ubuntu-22.04
 
-      - name: Upload SA-MP artifact
+      - name: Build (open.mp)
+        if: steps.build_type.outputs.BUILD_TYPE == 'omp'
+        run: |
+          docker run --rm -t \
+            -w /code \
+            -v "${{ github.workspace }}:/code" \
+            -v "${{ github.workspace }}/docker/build:/code/build" \
+            -e CONFIG=${{ env.CONFIG }} \
+            -e BUILD_SAMP_PLUGIN=0 \
+            randomix/build:ubuntu-22.04
+
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: randomix-samp-linux
-          path: docker/build-samp/Randomix.so
+          name: randomix-linux
+          path: docker/build/Randomix.so
 
-  windows-omp:
-    name: Build Windows .dll - open.mp (32-bit)
+  windows:
+    name: Build Windows .dll (32-bit)
     runs-on: windows-latest
     
     steps:
@@ -91,124 +87,48 @@ jobs:
         with:
           submodules: recursive
     
-      - name: Configure CMake for open.mp
-        run: |
-          cmake -S . -B build-omp -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release
+      - name: Determine build type
+        id: build_type
         shell: powershell
-    
-      - name: Build open.mp
         run: |
-          cmake --build build-omp --config Release --parallel
-        shell: powershell
-        
-      - name: Check file size and compare with SA-MP
-        run: |
-          Write-Host "=== open.mp build ==="
-          Get-ChildItem -Path "build-omp\Release\Randomix.dll" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
-          
-          Write-Host "`nAll files in open.mp Release folder:"
-          Get-ChildItem -Path "build-omp\Release" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
-        shell: powershell
-    
-      - name: Upload open.mp artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: randomix-omp-windows
-          path: build-omp/Release/Randomix.dll
-
-  windows-samp:
-    name: Build Windows .dll - SA-MP (32-bit)
-    runs-on: windows-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-    
-      - name: Configure CMake for SA-MP
-        run: |
-          # Clear any cached variables and force /MD
-          Remove-Item -Path "build-samp" -Recurse -Force -ErrorAction SilentlyContinue
-          
-          # Configure with explicit flags
-          cmake -S . -B build-samp -G "Visual Studio 17 2022" -A Win32 `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_SAMP_PLUGIN=ON `
-            -DCMAKE_CXX_FLAGS="/MD /O2 /EHsc" `
-            -DCMAKE_C_FLAGS="/MD /O2" `
-            -DCMAKE_CXX_FLAGS_RELEASE="/MD /O2 /DNDEBUG /EHsc" `
-            -DCMAKE_C_FLAGS_RELEASE="/MD /O2 /DNDEBUG" `
-            -DCMAKE_EXE_LINKER_FLAGS="/MD" `
-            -DCMAKE_SHARED_LINKER_FLAGS="/MD /OPT:REF /OPT:ICF"
-        shell: powershell
-        env:
-          CXXFLAGS: "/MD"
-          CFLAGS: "/MD"
-          CL: "/MD"
-    
-      - name: Build SA-MP
-        run: |
-          cmake --build build-samp --config Release --parallel --verbose
-        shell: powershell
-        
-      - name: Check runtime library usage
-        run: |
-          # Check if MSVC runtime DLLs are linked
-          $dllPath = "build-samp\Release\Randomix.dll"
-          
-          # Read file as bytes and convert to string
-          $bytes = [System.IO.File]::ReadAllBytes($dllPath)
-          $content = [System.Text.Encoding]::ASCII.GetString($bytes)
-          
-          Write-Host "Checking linked runtime libraries..."
-          
-          # Use [regex]::Match instead of -match to avoid execution
-          $msvcp = [regex]::Match($content, "msvcp140\.dll")
-          $msvcr = [regex]::Match($content, "MSVCR")
-          $vcrt = [regex]::Match($content, "vcruntime140\.dll")
-          
-          if ($msvcp.Success) {
-            Write-Host "Dynamic C++ runtime (MSVCP140.dll) found"
-          } elseif ($msvcr.Success) {
-            Write-Host "Static runtime detected (MSVCR reference)"
-          }
-          
-          if ($vcrt.Success) {
-            Write-Host "Dynamic C runtime (VCRUNTIME140.dll) found"
-          }
-        shell: powershell
-        continue-on-error: true
-        
-      - name: Check file size and check for PDB
-        run: |
-          $dll = Get-ChildItem -Path "build-samp\Release\Randomix.dll"
-          Write-Host "DLL File: $($dll.Name)"
-          Write-Host "DLL Size: $($dll.Length) bytes ($([math]::Round($dll.Length/1KB,2)) KB)"
-          
-          # Check if PDB file exists (debug symbols)
-          $pdbPath = "build-samp\Release\Randomix.pdb"
-          if (Test-Path $pdbPath) {
-            $pdb = Get-ChildItem $pdbPath
-            Write-Host "PDB File Found: $($pdb.Name) - $($pdb.Length) bytes"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            echo "BUILD_TYPE=${{ github.event.inputs.build_target }}" >> $env:GITHUB_OUTPUT
           } else {
-            Write-Host "No PDB file found (good for release)"
+            # Default to SA-MP for tag pushes
+            echo "BUILD_TYPE=samp" >> $env:GITHUB_OUTPUT
           }
-          
-          # List all files in Release folder
-          Write-Host "`nAll files in Release folder:"
-          Get-ChildItem -Path "build-samp\Release" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
+    
+      - name: Configure CMake (SA-MP)
+        if: steps.build_type.outputs.BUILD_TYPE == 'samp'
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release -DBUILD_SAMP_PLUGIN=ON
         shell: powershell
     
-      - name: Upload SA-MP artifact
+      - name: Configure CMake (open.mp)
+        if: steps.build_type.outputs.BUILD_TYPE == 'omp'
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release
+        shell: powershell
+    
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel
+        shell: powershell
+    
+      - name: Check file size
+        run: |
+          Get-ChildItem -Path "build\Release\Randomix.dll" | Select-Object Name, @{N="SizeKB";E={[math]::Round($_.Length/1KB,2)}}
+        shell: powershell
+    
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: randomix-samp-windows
-          path: build-samp/Release/Randomix.dll
+          name: randomix-windows
+          path: build/Release/Randomix.dll
 
   release:
     name: Create Release
-    needs: [linux-omp, linux-samp, windows-omp, windows-samp]
+    needs: [linux-docker, windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
@@ -221,15 +141,13 @@ jobs:
       - name: Display artifacts
         run: |
           echo "=== Artifacts ==="
-          find artifacts -type f -name "*.so" -o -name "*.dll" | sort
+          find artifacts -type f \( -name "*.so" -o -name "*.dll" \) | sort
 
       - name: Rename artifacts
         run: |
           mkdir -p release
-          cp artifacts/randomix-omp-linux/Randomix.so release/Randomix-omp-linux-x86.so
-          cp artifacts/randomix-samp-linux/Randomix.so release/Randomix-samp-linux-x86.so
-          cp artifacts/randomix-omp-windows/Randomix.dll release/Randomix-omp-win-x86.dll
-          cp artifacts/randomix-samp-windows/Randomix.dll release/Randomix-samp-win-x86.dll
+          cp artifacts/randomix-linux/Randomix.so release/Randomix-linux-x86.so
+          cp artifacts/randomix-windows/Randomix.dll release/Randomix-win-x86.dll
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
