@@ -128,13 +128,39 @@ jobs:
     
       - name: Configure CMake for SA-MP
         run: |
-          cmake -S . -B build-samp -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release -DBUILD_SAMP_PLUGIN=ON -T host=x86
+          $env:CXXFLAGS="/MD"
+          $env:CFLAGS="/MD"
+          cmake -S . -B build-samp -G "Visual Studio 17 2022" -A Win32 -DCMAKE_BUILD_TYPE=Release -DBUILD_SAMP_PLUGIN=ON -DCMAKE_CXX_FLAGS_RELEASE="/MD /O2 /DNDEBUG" -DCMAKE_C_FLAGS_RELEASE="/MD /O2 /DNDEBUG"
         shell: powershell
     
       - name: Build SA-MP
         run: |
-          cmake --build build-samp --config Release --parallel -- /p:CharacterSet=MultiByte /p:WholeProgramOptimization=true
+          cmake --build build-samp --config Release --parallel
         shell: powershell
+        env:
+          CL: "/MD"
+        
+      - name: Check runtime library usage
+        run: |
+          # Check if MSVC runtime DLLs are linked
+          $dllPath = "build-samp\Release\Randomix.dll"
+          
+          # Use powershell to check PE headers for runtime imports
+          $bytes = [System.IO.File]::ReadAllBytes($dllPath)
+          $content = [System.Text.Encoding]::ASCII.GetString($bytes)
+          
+          Write-Host "Checking linked runtime libraries..."
+          if ($content -match "msvcp140.dll") {
+            Write-Host "✓ Dynamic C++ runtime (MSVCP140.dll) found"
+          } elseif ($content -match "MSVCR") {
+            Write-Host "✗ Static runtime detected (MSVCR reference)"
+          }
+          
+          if ($content -match "vcruntime140.dll") {
+            Write-Host "✓ Dynamic C runtime (VCRUNTIME140.dll) found"
+          }
+        shell: powershell
+        continue-on-error: true
         
       - name: Check file size and check for PDB
         run: |
