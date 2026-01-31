@@ -9,23 +9,23 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# MSVC specific settings
+# Force dynamic runtime for all targets on Windows
 if(MSVC)
-    # Use dynamic runtime (not static)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+    # Set before any targets are created
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL" CACHE STRING "" FORCE)
     
-    # Release mode optimizations
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /Oi /DNDEBUG /MD")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /O2 /Oi /DNDEBUG /MD")
-    
-    # Remove debug flags if present
-    string(REPLACE "/Zi" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-    string(REPLACE "/ZI" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-    string(REPLACE "/Zi" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-    string(REPLACE "/ZI" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-    
-    # Linker optimizations
-    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /OPT:REF /OPT:ICF")
+    # Also set flags directly
+    foreach(flag_var CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+                     CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO
+                     CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
+                     CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO)
+        if(${flag_var} MATCHES "/MT")
+            string(REGEX REPLACE "/MT" "/MD" ${flag_var} "${${flag_var}}")
+        endif()
+        if(${flag_var} MATCHES "/MTd")
+            string(REGEX REPLACE "/MTd" "/MDd" ${flag_var} "${${flag_var}}")
+        endif()
+    endforeach()
 endif()
 
 # Build options
@@ -59,7 +59,11 @@ if(BUILD_SAMP_PLUGIN)
         BUILD_SAMP_PLUGIN=1
     )
 
-    if(NOT MSVC)
+    if(MSVC)
+        # Force /MD for this target
+        target_compile_options(${PROJECT_NAME} PRIVATE "/MD")
+        set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+    else()
         target_compile_options(${PROJECT_NAME} PRIVATE -m32)
         target_link_options(${PROJECT_NAME} PRIVATE -m32)
     endif()
@@ -107,7 +111,9 @@ else()
         PAWN_CELL_SIZE=32
     )
 
-    if(NOT MSVC)
+    if(MSVC)
+        set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+    else()
         target_compile_options(${PROJECT_NAME} PRIVATE -m32)
         target_link_options(${PROJECT_NAME} PRIVATE -m32)
     endif()
