@@ -332,10 +332,10 @@ stock Float:RandomFloat(Float:max) {
 }
 
 /**
- * Random integer in range [min, max] (alias for RandRange)
+ * Random integer in range [min, max) (alias for RandRange)
  * @param min Minimum value (inclusive)
- * @param max Maximum value (inclusive)
- * @return Random integer [min, max]
+ * @param max Maximum value (exclusive)
+ * @return Random integer [min, max)
  */
 stock RandInt(min, max) {
     return RandRange(min, max);
@@ -377,11 +377,11 @@ stock RandColorAlpha(alpha = 255) {
 }
 
 /**
- * Random integer in range with excluded value
+ * Random integer in range [min, max) with excluded value
  * @param min Minimum value (inclusive)
- * @param max Maximum value (inclusive)
+ * @param max Maximum value (exclusive)
  * @param except Value to exclude
- * @return Random integer [min, max] except 'except'
+ * @return Random integer [min, max) except 'except'
  * @note Efficient implementation without retry loop
  */
 stock RandExc(min, max, except) {
@@ -391,20 +391,20 @@ stock RandExc(min, max, except) {
         max = temp;
     }
     if (min == max) return min;
-    if (except < min || except > max) return RandRange(min, max);
+    if (except < min || except >= max) return RandRange(min, max);
     
     new result = RandRange(min, max - 1);
     return (result >= except) ? (result + 1) : result;
 }
 
 /**
- * Random integer in range with multiple excluded values
+ * Random integer in range [min, max) with multiple excluded values
  * @param min Minimum value (inclusive)
- * @param max Maximum value (inclusive)
+ * @param max Maximum value (exclusive)
  * @param ... Variable number of values to exclude
- * @return Random integer [min, max] except excluded values
- * @note If all values in range are excluded, returns max
- * @example RandExcMany(1, 10, 3, 5, 7) // Returns 1-10 except 3, 5, 7
+ * @return Random integer [min, max) except excluded values
+ * @note If all values in range are excluded, returns min
+ * @example RandExcMany(1, 11, 3, 5, 7) // Returns 1-10 except 3, 5, 7
  */
 stock RandExcMany(min, max, ...) {
     if (min > max) {
@@ -418,7 +418,7 @@ stock RandExcMany(min, max, ...) {
         return RandRange(min, max);
     }
     
-    for (new i = min, j; i <= max; ++i) {
+    for (new i = min, j; i < max; ++i) {
         j = 0;
         while (j < numExcluded) {
             if (getarg(j + 2) == i) {
@@ -443,7 +443,7 @@ stock RandExcMany(min, max, ...) {
         }
     }
     
-    return max;
+    return min;
 }
 
 /**
@@ -489,7 +489,7 @@ stock RandStr(dest[], len, const charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
  * @note Workaround since RandPick works on cells
  */
 stock Float:RandPickFloat(const Float:array[], count = sizeof array) {
-    new idx = RandRange(0, count - 1);
+    new idx = RandRange(0, count);  // [0, count) = 0..count-1
     return array[idx];
 }
 
