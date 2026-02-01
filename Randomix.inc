@@ -577,16 +577,16 @@ stock RandPointInCircleAroundPlayer(playerid, Float:radius, &Float:x, &Float:y) 
 
 // Standard D&D dice macros
 
-#define RandD2()   RandRange(1, 2)
-#define RandD3()   RandRange(1, 3)
-#define RandD4()   RandRange(1, 4)
-#define RandD6()   RandRange(1, 6)
-#define RandD8()   RandRange(1, 8)
-#define RandD10()  RandRange(1, 10)
-#define RandD12()  RandRange(1, 12)
-#define RandD20()  RandRange(1, 20)
-#define RandD30()  RandRange(1, 30)
-#define RandD100() RandRange(1, 100)
+#define RandD2()   RandRange(1, 3)    // [1, 3) = 1-2
+#define RandD3()   RandRange(1, 4)    // [1, 4) = 1-3
+#define RandD4()   RandRange(1, 5)    // [1, 5) = 1-4
+#define RandD6()   RandRange(1, 7)    // [1, 7) = 1-6
+#define RandD8()   RandRange(1, 9)    // [1, 9) = 1-8
+#define RandD10()  RandRange(1, 11)   // [1, 11) = 1-10
+#define RandD12()  RandRange(1, 13)   // [1, 13) = 1-12
+#define RandD20()  RandRange(1, 21)   // [1, 21) = 1-20
+#define RandD30()  RandRange(1, 31)   // [1, 31) = 1-30
+#define RandD100() RandRange(1, 101)  // [1, 101) = 1-100
 
 // Mathematical constants
 
